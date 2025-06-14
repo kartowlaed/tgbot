@@ -353,7 +353,7 @@ def open_notifications(call):
         ))
 
     # Кнопка “Назад”
-    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="open_main_menu"))
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="get_main_menu_markup"))
 
     bot.edit_message_text(
         "🔊 <b>Настройки оповещений</b>\n\n"
@@ -1752,6 +1752,16 @@ def handle_emoji_navigation(call):
         new_index = current_index
     show_emoji_info(call.message.chat.id, call.message.message_id, new_index)
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith("buy_emoji_"))
+def handle_buy_emoji(call):
+    user_id = str(call.from_user.id)
+    index = int(call.data.split("_")[-1])
+    user_states.setdefault(user_id, {})["buy_emoji_category"] = index
+    detail = emoji_details[index]
+    msg = bot.send_message(call.message.chat.id,
+                           f"Введите номер эмодзи из категории \"{detail['name']}\" (1-{detail['quantity']}):")
+    bot.register_next_step_handler(msg, process_emoji_choice)
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith("case_prev_") or call.data.startswith("case_next_"))
 def handle_case_navigation(call):
     parts = call.data.split("_")
@@ -2051,10 +2061,13 @@ def community_menu(call):
     btn_law         = types.InlineKeyboardButton("⚖️ Право",     callback_data="law_menu")
     btn_guide       = types.InlineKeyboardButton("📖 Гид",       callback_data="open_guide")
 
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.row(btn_tribes, btn_roles)
-    markup.row(btn_players, btn_stats)
-    markup.row(btn_law, btn_guide)
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(btn_tribes)
+    markup.add(btn_roles)
+    markup.add(btn_law)
+    markup.add(btn_stats)
+    markup.add(btn_players)
+    markup.add(btn_guide)
 
     # кнопка «Назад» в конец
     btn_back = types.InlineKeyboardButton("🔙 Назад", callback_data="get_main_menu_markup")
@@ -2197,9 +2210,6 @@ def tribe_main_menu(call):
     keyboard.row(tribe_btn)
     keyboard.row(
         types.InlineKeyboardButton("📜 Все трайбы", callback_data="list_tribes")
-    )
-    keyboard.row(
-        types.InlineKeyboardButton("🏆 Рейтинг трайбов", callback_data="top_tribes")
     )
     keyboard.row(
         types.InlineKeyboardButton("🔙 Главное меню", callback_data="get_main_menu_markup")
@@ -2420,13 +2430,11 @@ def handle_tribes_page_safe(call):
            "Укажите <b>[ID]</b> нужного трайба после нажатия кнопки.\n\n"
     for i, tribe in enumerate(current, start=start+1):
         level = tribe.get('level', 1)
-        xp = tribe.get('xp', 0)
-        xp_next = tribe_xp_to_next(level)
         text += (
             f"{i}. <b>{tribe['name']}</b> [{tribe['id']}]\n"
             f"   👥 {len(tribe['members'])}/{tribe.get('max_members', 10)}\n"
             f"   📅 {tribe['date_created']}\n"
-            f"   🏅 {level} ({xp}/{xp_next} XP)\n"
+            f"   🏅 {level} ур.\n"
             f"   📝 {tribe['desc'][:100]}...\n\n"
         )
 
@@ -2473,11 +2481,9 @@ def handle_tribes_list(m):
         desc    = tribe.get("desc", "Без описания")
         created = tribe.get("date_created", "—")
         level = tribe.get('level', 1)
-        xp = tribe.get('xp', 0)
-        xp_next = tribe_xp_to_next(level)
         output.append(
             f"<b>{name}</b> [{tid}]\n"
-            f"👥 {members}/10 | 📅 {created} | 🏅 {level} ({xp}/{xp_next} XP)\n"
+            f"👥 {members}/10 | 📅 {created} | 🏅 {level} ур.\n"
             f"📝 {desc[:80]}..."
         )
     text = "\n\n".join(output)
@@ -2734,6 +2740,7 @@ def clan_edit_markup():
 
 def clan_management_markup():
     kb = types.InlineKeyboardMarkup()
+    kb.row(types.InlineKeyboardButton("⚙️ Редактировать", callback_data="edit_tribe"))
     kb.row(
         types.InlineKeyboardButton("Кикнуть участника", callback_data="kick_tribe_member"),
         types.InlineKeyboardButton("Создать объявление", callback_data="create_tribe_announcement")
@@ -2798,6 +2805,12 @@ def _send_tribe_announce(leader_id, text, call):
         call.message.chat.id,
         f"✅ Объявление отправлено {delivered} участникам."
     )
+
+@bot.callback_query_handler(func=lambda c: c.data == "create_tribe_announcement")
+def cb_create_tribe_announcement(call):
+    leader_id = str(call.from_user.id)
+    msg = bot.send_message(call.message.chat.id, "Введите текст объявления для вашего трайба:")
+    bot.register_next_step_handler(msg, lambda m: _send_tribe_announce(leader_id, m.text, call))
 
 @bot.callback_query_handler(func=lambda call: call.data == "manage_tribe")
 def manage_tribe_menu(call):
@@ -2959,7 +2972,7 @@ def view_tribe(call):
         f"📛 <b>Название и ID:</b> {tribe['name']} [{tribe['id']}]\n"
         f"📝 <b>Описание:</b> {tribe['desc']}\n"
         f"📅 <b>Дата создания:</b> {tribe['date_created']}\n"
-        f"🏅 <b>Уровень трайба:</b> {level} {bar} ({xp_cur}/{xp_needed} XP)\n"
+        f"🏅 <b>Уровень трайба:</b> {level} {bar}\n"
         f"👥 <b>Участников:</b> {len(tribe['members'])}/10\n\n"
         f"👤 <b>Состав:</b>\n{members_info}\n"
         f"🔗 <b>Беседа:</b> {tribe['chat_link'] or '—'}"
@@ -3368,9 +3381,7 @@ def show_top_tribes(call):
         for i, tribe in enumerate(top5, 1):
             name = tribe.get("name", "—")
             level = tribe.get("level", 1)
-            xp = tribe.get("xp", 0)
-            xp_next = tribe_xp_to_next(level)
-            text += f"{i}. {name} — {level} ур. ({xp}/{xp_next} XP)\n"
+            text += f"{i}. {name} — {level} ур.\n"
 
     markup = types.InlineKeyboardMarkup().add(
         types.InlineKeyboardButton("🔙 Назад", callback_data="stats_menu")
@@ -3866,8 +3877,8 @@ GUIDE_STEPS = [
         "title": "Сообщество и Трайбы 🏰",
         "text": (
             "Кнопка «🆕 Сообщество» → «🏘 Трайбы».\n"
-            "Создай клан или вступи в существующий — там чаты и совместные ивенты.\n"
-            "Также можно посмотреть главные роли сервера и найти игрока по нику/@username."
+            "Создай клан или вступи в существующий. Глава может переименовывать и описывать трайб.\n"
+            "Тут же доступны роли сервера и поиск игроков."
         )
     },
     {
@@ -3877,6 +3888,13 @@ GUIDE_STEPS = [
             "• Список должностей (Президент, Мэры…)\n"
             "• Поиск игрока по нику или Telegram-username\n"
             "• Заявки в трайбы или на должность"
+        )
+    },
+    {
+        "title": "Рейтинги и сезоны 📊",
+        "text": (
+            "Следи за топами игроков и трайбов в разделе «Статистика».\n"
+            "Историю развития смотри в «Архиве сезонов»."
         )
     },
     {
