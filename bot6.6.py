@@ -32,20 +32,12 @@ DATA_FILE = os.path.join(BASE_DIR, "data.json")
 # Global dictionary for user states
 user_states = {}  # { user_id: { "state": ..., "temp_data": { ... } } }
 
-# Архив сезонов (для справки)
-SEASON_ARCHIVE = [
-    {"name": "Сезон I", "start": "01.2023", "end": "06.2023"},
-    {"name": "Сезон II", "start": "07.2023", "end": "12.2023"},
-]
-
-with open(DATA_FILE, "r", encoding="utf-8") as f:
-    data = json.load(f)
+# Файл с архивом сезонов
+SEASONS_FILE = os.path.join(BASE_DIR, "seasons.json")
 
 def get_root_path(filename):
     base_dir = os.path.dirname(os.path.abspath(__file__))  # путь к корню бота
-    return os.path.join(base_dir, filename)    
-# Global dictionary for user states
-user_states = {}  # { user_id: { "state": ..., "temp_data": { ... } } }
+    return os.path.join(base_dir, filename)
 
 # Пониженные цены на кейсы (скидка 15% с округлением до числа, заканчивающегося на 5, 9 или 0)
 case_details = [
@@ -147,6 +139,22 @@ def load_data():
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
+
+# ---------- Работа с архивом сезонов ----------
+def load_seasons():
+    if not os.path.exists(SEASONS_FILE):
+        with open(SEASONS_FILE, "w", encoding="utf-8") as f:
+            json.dump([], f, indent=4)
+        return []
+    try:
+        with open(SEASONS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except json.decoder.JSONDecodeError:
+        return []
+
+def save_seasons(seasons):
+    with open(SEASONS_FILE, "w", encoding="utf-8") as f:
+        json.dump(seasons, f, indent=4)
 
 def valid_nickname(nickname):
     return bool(re.fullmatch(r"[A-Za-z0-9 _]{3,16}", nickname))
@@ -3309,15 +3317,48 @@ def show_top_tribes(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == "season_archive")
 def show_season_archive(call):
-    if not SEASON_ARCHIVE:
-        text = "Архив сезонов пуст."
+    seasons = load_seasons()
+    markup = types.InlineKeyboardMarkup()
+    text = "🗂 <b>Архив сезонов</b>"
+    if seasons:
+        for s in seasons:
+            title = f"{s.get('name', 'Сезон')} - {s.get('number', '')}"
+            markup.add(types.InlineKeyboardButton(title, callback_data=f"season_view_{s.get('number')}"))
     else:
-        lines = ["🗂 <b>Архив сезонов</b>"]
-        for s in SEASON_ARCHIVE:
-            lines.append(f"{s['name']}: {s['start']} - {s['end']}")
-        text = "\n".join(lines)
+        text = "Архив сезонов пуст."
+    if call.from_user.id == ADMIN_ID:
+        markup.add(types.InlineKeyboardButton("➕ Добавить сезон", callback_data="season_add"))
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="community_menu"))
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="HTML",
+        reply_markup=markup
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("season_view_"))
+def show_season_detail(call):
+    try:
+        number = int(call.data.split("_")[-1])
+    except ValueError:
+        bot.answer_callback_query(call.id, "Ошибка номера сезона")
+        return
+    seasons = load_seasons()
+    season = next((s for s in seasons if s.get("number") == number), None)
+    if not season:
+        bot.answer_callback_query(call.id, "Сезон не найден")
+        return
+    text = (
+        f"<b>{season.get('name', 'Сезон')} - {season.get('number')}</b>\n"
+        f"{season.get('dates', '')}\n\n"
+        f"{season.get('description', '')}"
+    )
+    pages = season.get("pages") or []
+    if pages:
+        text += "\n\n" + "\n".join(f"- {p}" for p in pages)
     markup = types.InlineKeyboardMarkup().add(
-        types.InlineKeyboardButton("🔙 Назад", callback_data="community_menu")
+        types.InlineKeyboardButton("🔙 К сезонам", callback_data="season_archive")
     )
     bot.edit_message_text(
         text,
@@ -3326,6 +3367,60 @@ def show_season_archive(call):
         parse_mode="HTML",
         reply_markup=markup
     )
+
+@bot.callback_query_handler(func=lambda call: call.data == "season_add")
+def add_season_start(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "Нет доступа")
+        return
+    msg = bot.send_message(call.message.chat.id, "Введите название сезона:")
+    user_states[str(call.from_user.id)] = {"state": "awaiting_season_title", "temp_data": {}}
+    bot.register_next_step_handler(msg, process_season_title)
+
+@bot.message_handler(commands=["add_season"])
+def cmd_add_season(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    msg = bot.send_message(message.chat.id, "Введите название сезона:")
+    user_states[str(message.from_user.id)] = {"state": "awaiting_season_title", "temp_data": {}}
+    bot.register_next_step_handler(msg, process_season_title)
+
+@bot.message_handler(func=lambda m: str(m.from_user.id) in user_states and user_states[str(m.from_user.id)].get("state") == "awaiting_season_title")
+def process_season_title(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    user_states[str(message.from_user.id)]["temp_data"]["title"] = message.text.strip()
+    user_states[str(message.from_user.id)]["state"] = "awaiting_season_dates"
+    msg = bot.send_message(message.chat.id, "Введите даты сезона (например 01.2023 - 06.2023):")
+    bot.register_next_step_handler(msg, process_season_dates)
+
+@bot.message_handler(func=lambda m: str(m.from_user.id) in user_states and user_states[str(m.from_user.id)].get("state") == "awaiting_season_dates")
+def process_season_dates(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    user_states[str(message.from_user.id)]["temp_data"]["dates"] = message.text.strip()
+    user_states[str(message.from_user.id)]["state"] = "awaiting_season_desc"
+    msg = bot.send_message(message.chat.id, "Введите описание сезона:")
+    bot.register_next_step_handler(msg, process_season_desc)
+
+@bot.message_handler(func=lambda m: str(m.from_user.id) in user_states and user_states[str(m.from_user.id)].get("state") == "awaiting_season_desc")
+def process_season_desc(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    info = user_states.pop(str(message.from_user.id), {}).get("temp_data", {})
+    info["description"] = message.text.strip()
+    seasons = load_seasons()
+    number = len(seasons) + 1
+    season = {
+        "number": number,
+        "name": info.get("title", f"Сезон {number}"),
+        "dates": info.get("dates", ""),
+        "description": info.get("description", ""),
+        "pages": []
+    }
+    seasons.append(season)
+    save_seasons(seasons)
+    bot.send_message(message.chat.id, f"Сезон '{season['name']}' добавлен.")
 
 #------------------- Око Эндера ----------------------
 
