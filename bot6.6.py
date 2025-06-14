@@ -109,6 +109,10 @@ def load_data():
             if "role" not in user:
                 user["role"] = "игрок"
 
+        for lid, tribe in data.get("tribes", {}).items():
+            tribe.setdefault("level", 1)
+            tribe.setdefault("xp", 0)
+
         # Сохраняем в правильном порядке
         ordered_data = OrderedDict()
         for key in ordered_keys:
@@ -746,8 +750,8 @@ def process_admin_add_xp(message):
             continue
         
         user = data["users"][uid]
-        user.setdefault("xp", 0)
-        user["xp"] += xp_amount
+        add_user_xp(uid, xp_amount, data)
+        update_xp(uid)
         
         # уведомляем игрока
         try:
@@ -763,9 +767,6 @@ def process_admin_add_xp(message):
         results.append(f"✅ {nick}: +{xp_amount} XP")
     
     save_data(data)
-    
-    save_data(data)
-    update_xp(uid)
 
     bot.send_message(
         message.chat.id,
@@ -836,9 +837,8 @@ def process_admin_notification(message, category_key):
         if u.get("notif_flags", 0) & FLAG_MAP.get(category_key, 0):
             try:
                 bot.send_message(uid, full_text)
-                # Начисляем 10 XP
-                u.setdefault("xp", 0)
-                u["xp"] += 10
+                add_user_xp(uid, 10, data)
+                update_xp(uid)
                 sent += 1
             except:
                 pass
@@ -1397,8 +1397,8 @@ def handle_referral(message):
                     break
         if inviter_id:
             inviter = data["users"][inviter_id]
-            inviter.setdefault("xp", 0)
-            inviter["xp"] += 150
+            add_user_xp(inviter_id, 150, data)
+            update_xp(inviter_id)
             # можно добавить запись в историю покупок/наград:
             inviter.setdefault("purchases", []).append({
                 "item": f"Реферальная награда за {temp['nickname']}",
@@ -1701,8 +1701,8 @@ def admin_convert_eyes_xp(message):
 
         # уменьшаем Ender Eyes и добавляем XP
         u["ender_eyes"] = eyes - to_convert
-        u.setdefault("xp", 0)
-        u["xp"] += xp_gain
+        add_user_xp(uid, xp_gain, data)
+        update_xp(uid)
 
         # уведомляем пользователя
         try:
@@ -1820,8 +1820,8 @@ def process_emoji_choice(message):
 
     # начисляем XP только если это не “бесплатная” эмодзи
     if cost > 0:
-        user.setdefault("xp", 0)
-        user["xp"] += cost
+        add_user_xp(user_id, cost, data)
+        update_xp(user_id)
         bot.send_message(
             message.chat.id,
             f"✅ Вы приобрели {detail['name']} №{choice_num} за {cost}₽.\n🥇 +{cost} XP за покупку!"
@@ -1873,8 +1873,8 @@ def handle_buy_case(call):
     # начисляем XP только если кейс не бесплатный (здесь кейсы всегда платные,
     # но на случай промо или будущих фич)
     if case["price"] > 0:
-        user.setdefault("xp", 0)
-        user["xp"] += case["price"]
+        add_user_xp(user_id, case["price"], data)
+        update_xp(user_id)
         xp_text = f"\n🥇 +{case['price']} XP за покупку кейса!"
     else:
         xp_text = "\nXP не начисляется (промо/бесплатный кейс)."
@@ -2114,15 +2114,11 @@ def get_user_tribe(user_id, data):
     return None, None
 
 def recalc_tribe_level(leader_id, data):
-    """Пересчитывает уровень трайба на основе уровней участников."""
+    """Гарантирует наличие полей уровня и XP у трайба."""
     tribe = data.get("tribes", {}).get(leader_id)
-    if not tribe:
-        return
-    level_sum = 0
-    for member in tribe.get("members", []):
-        uid = member.get("user_id")
-        level_sum += data.get("users", {}).get(uid, {}).get("level", 0)
-    tribe["level"] = level_sum
+    if tribe:
+        tribe.setdefault("level", 1)
+        tribe.setdefault("xp", 0)
 
 def update_user_tribe_level(user_id, data):
     leader_id, tribe = get_user_tribe(user_id, data)
@@ -2355,7 +2351,8 @@ def tribe_create_confirm(call):
         }],
         "max_members": 10,
         "join_requests": [],
-        "level": user.get("level", 0)
+        "level": 1,
+        "xp": 0
     }
     data.setdefault("tribes", {})
     data["tribes"][user_id] = tribe
@@ -2401,11 +2398,14 @@ def handle_tribes_page_safe(call):
     text = "📜 <b>Список трайбов:</b>\n━━━━━━━━━━━━━━━━\n" \
            "Укажите <b>[ID]</b> нужного трайба после нажатия кнопки.\n\n"
     for i, tribe in enumerate(current, start=start+1):
+        level = tribe.get('level', 1)
+        xp = tribe.get('xp', 0)
+        xp_next = tribe_xp_to_next(level)
         text += (
             f"{i}. <b>{tribe['name']}</b> [{tribe['id']}]\n"
             f"   👥 {len(tribe['members'])}/{tribe.get('max_members', 10)}\n"
             f"   📅 {tribe['date_created']}\n"
-            f"   🏅 {tribe.get('level', 0)} ур.\n"
+            f"   🏅 {level} ({xp}/{xp_next} XP)\n"
             f"   📝 {tribe['desc'][:100]}...\n\n"
         )
 
@@ -2451,9 +2451,12 @@ def handle_tribes_list(m):
         members = len(tribe.get("members", []))
         desc    = tribe.get("desc", "Без описания")
         created = tribe.get("date_created", "—")
+        level = tribe.get('level', 1)
+        xp = tribe.get('xp', 0)
+        xp_next = tribe_xp_to_next(level)
         output.append(
             f"<b>{name}</b> [{tid}]\n"
-            f"👥 {members}/10 | 📅 {created} | 🏅 {tribe.get('level',0)} ур.\n"
+            f"👥 {members}/10 | 📅 {created} | 🏅 {level} ({xp}/{xp_next} XP)\n"
             f"📝 {desc[:80]}..."
         )
     text = "\n\n".join(output)
@@ -2903,13 +2906,19 @@ def view_tribe(call):
             members_info += f"{member['nickname']} {role_emoji}{star} (@{username})\n"
         else:
             members_info += f"{member['nickname']} {role_emoji}{star}\n"
+    level = tribe.get("level", 1)
+    xp_cur = tribe.get("xp", 0)
+    xp_needed = tribe_xp_to_next(level)
+    filled = int(min(xp_cur, xp_needed) / xp_needed * 10)
+    bar = "[" + "🟦" * filled + "⬜" * (10 - filled) + "]"
+
     text = (
         f"🏰 <b>Ваш трайб</b>\n"
         f"━━━━━━━━━━━━━━━━\n"
         f"📛 <b>Название и ID:</b> {tribe['name']} [{tribe['id']}]\n"
         f"📝 <b>Описание:</b> {tribe['desc']}\n"
         f"📅 <b>Дата создания:</b> {tribe['date_created']}\n"
-        f"🏅 <b>Уровень трайба:</b> {tribe.get('level', 0)}\n"
+        f"🏅 <b>Уровень трайба:</b> {level} {bar} ({xp_cur}/{xp_needed} XP)\n"
         f"👥 <b>Участников:</b> {len(tribe['members'])}/10\n\n"
         f"👤 <b>Состав:</b>\n{members_info}\n"
         f"🔗 <b>Беседа:</b> {tribe['chat_link'] or '—'}"
@@ -3206,7 +3215,8 @@ def update_streak(user_id: str):
     # бонус BV#
     multiplier = 1.5 if user.get("bv_plus") else 1.0
     xp_reward  = int(base_xp * multiplier)
-    user["xp"] = user.get("xp", 0) + xp_reward
+    add_user_xp(user_id, xp_reward, data)
+    update_xp(user_id)
 
     # ——— Шанс на 1 🧿 ———
     if random.random() < 0.05:
@@ -3316,8 +3326,10 @@ def show_top_tribes(call):
         text = "🛡 <b>Топ-5 трайбов:</b>\n"
         for i, tribe in enumerate(top5, 1):
             name = tribe.get("name", "—")
-            level = tribe.get("level", 0)
-            text += f"{i}. {name} — {level} ур.\n"
+            level = tribe.get("level", 1)
+            xp = tribe.get("xp", 0)
+            xp_next = tribe_xp_to_next(level)
+            text += f"{i}. {name} — {level} ур. ({xp}/{xp_next} XP)\n"
 
     markup = types.InlineKeyboardMarkup().add(
         types.InlineKeyboardButton("🔙 Назад", callback_data="leaderboard_menu")
@@ -3536,7 +3548,7 @@ def handle_daily_gift(call):
     if r < 0.05:
         # комбо-подарок: XP + монетка
         coins = random.randint(1, 3)
-        user["xp"]     = user.get("xp", 0) + xp_amount
+        add_user_xp(user_id, xp_amount, data)
         user["balance"] = user.get("balance", 0) + coins
         text = f"Комбоподарок! +{xp_amount} XP, +{coins}💰"
     elif r < 0.10:
@@ -3550,7 +3562,7 @@ def handle_daily_gift(call):
         text = f"+{coins}💰 монет"
     else:
         # только XP
-        user["xp"] = user.get("xp", 0) + xp_amount
+        add_user_xp(user_id, xp_amount, data)
         text = f"+{xp_amount} XP"
 
     # отмечаем, что сегодня подарок взят
@@ -3940,6 +3952,30 @@ def xp_to_next(level: int) -> int:
     """
     return 100 + 25 * level
 
+def tribe_xp_to_next(level: int) -> int:
+    """Возвращает XP, необходимый трайбу для перехода на следующий уровень."""
+    return 250 + 100 * level
+
+def add_tribe_xp(leader_id: str, amount: int, data: dict):
+    tribe = data.get("tribes", {}).get(leader_id)
+    if not tribe:
+        return
+    tribe.setdefault("level", 1)
+    tribe.setdefault("xp", 0)
+    tribe["xp"] += amount
+    while tribe["xp"] >= tribe_xp_to_next(tribe["level"]):
+        tribe["xp"] -= tribe_xp_to_next(tribe["level"])
+        tribe["level"] += 1
+
+def add_user_xp(user_id: str, amount: int, data: dict):
+    user = data["users"].setdefault(user_id, {})
+    user.setdefault("xp", 0)
+    user["xp"] += amount
+    leader_id, tribe = get_user_tribe(user_id, data)
+    if tribe:
+        add_tribe_xp(leader_id, amount, data)
+    return amount
+
 def level_up(user_id: str, data: dict):
     """
     Поднимает пользователя на все уровни, которые он «проскочил»,
@@ -3959,7 +3995,6 @@ def level_up(user_id: str, data: dict):
         total_reward += reward
 
     if total_reward > 0:
-        update_user_tribe_level(user_id, data)
         save_data(data)
         bot.send_message(
             user_id,
