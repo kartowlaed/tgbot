@@ -2044,17 +2044,16 @@ def community_menu(call):
     data    = load_data()
     user    = data["users"].get(user_id, {})
 
-    # базовые кнопки «Трайбы», «Роли», «Игроки», «Топ стриков»
-    btn_tribes      = types.InlineKeyboardButton("🏰 Трайбы",      callback_data="community_tribes")
-    btn_roles       = types.InlineKeyboardButton("🎭 Роли",        callback_data="show_roles")
-    btn_players     = types.InlineKeyboardButton("🧑‍🤝‍🧑 Игроки",  callback_data="search_players")
-    btn_top_streaks = types.InlineKeyboardButton("🔥 Топ стриков", callback_data="top_streaks")
-    btn_top_levels  = types.InlineKeyboardButton("🏆 Топ уровней", callback_data="top_levels")
-    btn_seasons     = types.InlineKeyboardButton("🗂 Сезоны", callback_data="season_archive")
+    # базовые кнопки «Трайбы», «Роли», «Игроки», «Рейтинги»
+    btn_tribes      = types.InlineKeyboardButton("🏰 Трайбы",     callback_data="community_tribes")
+    btn_roles       = types.InlineKeyboardButton("🎭 Роли",       callback_data="show_roles")
+    btn_players     = types.InlineKeyboardButton("🧑‍🤝‍🧑 Игроки", callback_data="search_players")
+    btn_leaderboard = types.InlineKeyboardButton("📊 Рейтинги",   callback_data="leaderboard_menu")
+    btn_seasons     = types.InlineKeyboardButton("🗂 Сезоны",     callback_data="season_archive")
 
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(btn_tribes, btn_roles, btn_players, btn_top_streaks)
-    markup.add(btn_top_levels, btn_seasons)
+    markup.add(btn_tribes, btn_roles, btn_players, btn_leaderboard)
+    markup.add(btn_seasons)
 
     # 📖 Гид: показываем, если пользователь уже хотя бы раз заходил в гид
     if user.get("guide_step", 0) > 0:
@@ -2080,6 +2079,22 @@ def community_menu(call):
             reply_markup=markup,
             parse_mode="HTML"
         )
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "leaderboard_menu")
+def leaderboard_menu(call):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("🏆 Топ уровней", callback_data="top_levels"))
+    markup.add(types.InlineKeyboardButton("🔥 Топ стриков", callback_data="top_streaks"))
+    markup.add(types.InlineKeyboardButton("🛡 Рейтинг трайбов", callback_data="top_tribes"))
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="community_menu"))
+    bot.edit_message_text(
+        "📊 <b>Рейтинги</b>: выбери категорию",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="HTML",
+        reply_markup=markup,
+    )
 
 
 ## ---------------- Tribe System (Final Version) ----------------
@@ -3244,7 +3259,7 @@ def show_top_streaks(call):
             streak = u.get("login_streak", 0)
             text  += f"{i}. {nick} — {streak} дн.\n"
 
-    back_btn = types.InlineKeyboardButton("🔙 Назад", callback_data="community_menu")
+    back_btn = types.InlineKeyboardButton("🔙 Назад", callback_data="leaderboard_menu")
     back_markup = types.InlineKeyboardMarkup().add(back_btn)
 
     bot.edit_message_text(
@@ -3275,7 +3290,7 @@ def show_top_levels(call):
             text += f"{i}. {nick} — {level} ур.\n"
 
     markup = types.InlineKeyboardMarkup().add(
-        types.InlineKeyboardButton("🔙 Назад", callback_data="community_menu")
+        types.InlineKeyboardButton("🔙 Назад", callback_data="leaderboard_menu")
     )
     bot.edit_message_text(
         text,
@@ -3305,7 +3320,7 @@ def show_top_tribes(call):
             text += f"{i}. {name} — {level} ур.\n"
 
     markup = types.InlineKeyboardMarkup().add(
-        types.InlineKeyboardButton("🔙 Назад", callback_data="community_tribes")
+        types.InlineKeyboardButton("🔙 Назад", callback_data="leaderboard_menu")
     )
     bot.edit_message_text(
         text,
@@ -3318,14 +3333,17 @@ def show_top_tribes(call):
 @bot.callback_query_handler(func=lambda call: call.data == "season_archive")
 def show_season_archive(call):
     seasons = load_seasons()
-    markup = types.InlineKeyboardMarkup()
     text = "🗂 <b>Архив сезонов</b>"
     if seasons:
         for s in seasons:
-            title = f"{s.get('name', 'Сезон')} - {s.get('number', '')}"
-            markup.add(types.InlineKeyboardButton(title, callback_data=f"season_view_{s.get('number')}"))
+            number = s.get("number", "")
+            name = s.get("name", f"Сезон {number}")
+            dates = s.get("dates", "")
+            text += f"\n{number}. {name} ({dates})"
     else:
-        text = "Архив сезонов пуст."
+        text += "\nАрхив сезонов пуст."
+
+    markup = types.InlineKeyboardMarkup()
     if call.from_user.id == ADMIN_ID:
         markup.add(types.InlineKeyboardButton("➕ Добавить сезон", callback_data="season_add"))
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="community_menu"))
