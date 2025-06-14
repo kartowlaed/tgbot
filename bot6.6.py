@@ -13,7 +13,6 @@ import logging
 from telebot.types import InputMediaPhoto
 from collections import OrderedDict
 from random import choice
-from datetime import datetime, timedelta
 import math
 
 TOKEN = "8170890381:AAEIX0qWiDnbCj_8794VZpIMEiS_feZQdAs"
@@ -2044,20 +2043,18 @@ def community_menu(call):
     data    = load_data()
     user    = data["users"].get(user_id, {})
 
-    # базовые кнопки «Трайбы», «Роли», «Игроки», «Рейтинги»
+    # базовые кнопки «Трайбы», «Роли», «Игроки», «Статистика», «Право», «Гид»
     btn_tribes      = types.InlineKeyboardButton("🏰 Трайбы",     callback_data="community_tribes")
     btn_roles       = types.InlineKeyboardButton("🎭 Роли",       callback_data="show_roles")
     btn_players     = types.InlineKeyboardButton("🧑‍🤝‍🧑 Игроки", callback_data="search_players")
-    btn_leaderboard = types.InlineKeyboardButton("📊 Рейтинги",   callback_data="leaderboard_menu")
-    btn_seasons     = types.InlineKeyboardButton("🗂 Сезоны",     callback_data="season_archive")
+    btn_stats       = types.InlineKeyboardButton("📊 Статистика", callback_data="stats_menu")
+    btn_law         = types.InlineKeyboardButton("⚖️ Право",     callback_data="law_menu")
+    btn_guide       = types.InlineKeyboardButton("📖 Гид",       callback_data="open_guide")
 
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(btn_tribes, btn_roles, btn_players, btn_leaderboard)
-    markup.add(btn_seasons)
-
-    # 📖 Гид: показываем, если пользователь уже хотя бы раз заходил в гид
-    if user.get("guide_step", 0) > 0:
-        markup.add(types.InlineKeyboardButton("📖 Гид", callback_data="open_guide"))
+    markup.row(btn_tribes, btn_roles)
+    markup.row(btn_players, btn_stats)
+    markup.row(btn_law, btn_guide)
 
     # кнопка «Назад» в конец
     btn_back = types.InlineKeyboardButton("🔙 Назад", callback_data="get_main_menu_markup")
@@ -2081,12 +2078,13 @@ def community_menu(call):
         )
 
 
-@bot.callback_query_handler(func=lambda call: call.data == "leaderboard_menu")
-def leaderboard_menu(call):
+@bot.callback_query_handler(func=lambda call: call.data == "stats_menu")
+def stats_menu(call):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton("🏆 Топ уровней", callback_data="top_levels"))
     markup.add(types.InlineKeyboardButton("🔥 Топ стриков", callback_data="top_streaks"))
     markup.add(types.InlineKeyboardButton("🛡 Рейтинг трайбов", callback_data="top_tribes"))
+    markup.add(types.InlineKeyboardButton("🗓️ Сезоны", callback_data="season_archive"))
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="community_menu"))
     bot.edit_message_text(
         "📊 <b>Рейтинги</b>: выбери категорию",
@@ -2095,6 +2093,28 @@ def leaderboard_menu(call):
         parse_mode="HTML",
         reply_markup=markup,
     )
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "law_menu")
+def law_menu(call):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("⚖️ Судебные дела", callback_data="law_cases"))
+    markup.add(types.InlineKeyboardButton("🗄️ Архив дел", callback_data="law_archive"))
+    markup.add(types.InlineKeyboardButton("🛠️ Административная", callback_data="law_admin"))
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="community_menu"))
+    bot.edit_message_text(
+        "⚖️ <b>Право</b>: выбери раздел",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="HTML",
+        reply_markup=markup,
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data in ["law_cases", "law_archive", "law_admin"])
+def law_placeholders(call):
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, "Раздел в разработке.")
 
 
 ## ---------------- Tribe System (Final Version) ----------------
@@ -2340,6 +2360,7 @@ def tribe_create_confirm(call):
         "name": temp["tribe_name"],
         "id": temp["tribe_id"],
         "desc": temp["tribe_desc"],
+        "last_desc_change": datetime.now().strftime("%Y-%m-%d"),
         "date_created": datetime.now().strftime("%d.%m.%Y"),
         "chat_link": temp["tribe_chat"],
         "leader": user_id,
@@ -2802,7 +2823,17 @@ def process_edit_tribe_desc(message):
     if not tribe:
         bot.send_message(message.chat.id, "❌ Трайб не найден.")
         return
+    last_change = tribe.get("last_desc_change")
+    if last_change:
+        try:
+            last_date = datetime.strptime(last_change, "%Y-%m-%d")
+            if (datetime.now() - last_date).days < 3:
+                bot.send_message(message.chat.id, "❗ Описание можно менять раз в три дня.")
+                return
+        except Exception:
+            pass
     tribe["desc"] = new_desc
+    tribe["last_desc_change"] = datetime.now().strftime("%Y-%m-%d")
     save_data(data)
     bot.send_message(message.chat.id, "✅ Описание трайба обновлено.", reply_markup=clan_edit_markup())
 
@@ -2822,13 +2853,23 @@ def process_edit_tribe_name(message):
     if not tribe:
         bot.send_message(message.chat.id, "❌ Трайб не найден.")
         return
+    user = data["users"].get(user_id, {})
+    cost = 0 if user.get("bv_plus") else 250
+    if user.get("balance", 0) < cost:
+        bot.send_message(message.chat.id, "❗ Недостаточно монет для переименования.")
+        return
+    user["balance"] -= cost
     tribe["name"] = new_name
     for member in tribe.get("members", []):
         uid = member.get("user_id")
         if uid in data.get("users", {}):
             data["users"][uid]["tribe"] = new_name
     save_data(data)
-    bot.send_message(message.chat.id, "✅ Название трайба обновлено.", reply_markup=clan_edit_markup())
+    bot.send_message(
+        message.chat.id,
+        "✅ Название трайба обновлено." + (f" Списано {cost} монет." if cost else ""),
+        reply_markup=clan_edit_markup(),
+    )
 
 @bot.callback_query_handler(func=lambda call: call.data == "edit_tribe_id")
 def edit_tribe_id_prompt(call):
@@ -3269,7 +3310,7 @@ def show_top_streaks(call):
             streak = u.get("login_streak", 0)
             text  += f"{i}. {nick} — {streak} дн.\n"
 
-    back_btn = types.InlineKeyboardButton("🔙 Назад", callback_data="leaderboard_menu")
+    back_btn = types.InlineKeyboardButton("🔙 Назад", callback_data="stats_menu")
     back_markup = types.InlineKeyboardMarkup().add(back_btn)
 
     bot.edit_message_text(
@@ -3300,7 +3341,7 @@ def show_top_levels(call):
             text += f"{i}. {nick} — {level} ур.\n"
 
     markup = types.InlineKeyboardMarkup().add(
-        types.InlineKeyboardButton("🔙 Назад", callback_data="leaderboard_menu")
+        types.InlineKeyboardButton("🔙 Назад", callback_data="stats_menu")
     )
     bot.edit_message_text(
         text,
@@ -3332,7 +3373,7 @@ def show_top_tribes(call):
             text += f"{i}. {name} — {level} ур. ({xp}/{xp_next} XP)\n"
 
     markup = types.InlineKeyboardMarkup().add(
-        types.InlineKeyboardButton("🔙 Назад", callback_data="leaderboard_menu")
+        types.InlineKeyboardButton("🔙 Назад", callback_data="stats_menu")
     )
     bot.edit_message_text(
         text,
@@ -3358,7 +3399,7 @@ def show_season_archive(call):
     markup = types.InlineKeyboardMarkup()
     if call.from_user.id == ADMIN_ID:
         markup.add(types.InlineKeyboardButton("➕ Добавить сезон", callback_data="season_add"))
-    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="community_menu"))
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="stats_menu"))
     bot.edit_message_text(
         text,
         call.message.chat.id,
@@ -3954,7 +3995,7 @@ def xp_to_next(level: int) -> int:
 
 def tribe_xp_to_next(level: int) -> int:
     """Возвращает XP, необходимый трайбу для перехода на следующий уровень."""
-    return 250 + 100 * level
+    return 150 + 100 * level
 
 def add_tribe_xp(leader_id: str, amount: int, data: dict):
     tribe = data.get("tribes", {}).get(leader_id)
