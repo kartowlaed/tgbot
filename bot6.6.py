@@ -2043,7 +2043,14 @@ def render_search_profile(user):
 
 @bot.callback_query_handler(func=lambda call: call.data == "search_players")
 def search_players_prompt_new(call):
-    msg = bot.send_message(call.message.chat.id, "🔍 Введите ник, юзернейм или ID:")
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("🎭 Роли", callback_data="show_roles"))
+    kb.add(types.InlineKeyboardButton("🔙 Назад", callback_data="community_menu"))
+    msg = bot.send_message(
+        call.message.chat.id,
+        "🔍 Введите никнейм или @username игрока:",
+        reply_markup=kb,
+    )
     bot.register_next_step_handler(msg, process_player_search)
 
 
@@ -2053,20 +2060,22 @@ def community_menu(call):
     data    = load_data()
     user    = data["users"].get(user_id, {})
 
-    # базовые кнопки «Трайбы», «Роли», «Игроки», «Статистика», «Право», «Гид»
-    btn_tribes      = types.InlineKeyboardButton("🏰 Трайбы",     callback_data="community_tribes")
-    btn_roles       = types.InlineKeyboardButton("🎭 Роли",       callback_data="show_roles")
-    btn_players     = types.InlineKeyboardButton("🧑‍🤝‍🧑 Игроки", callback_data="search_players")
+    # динамичная кнопка трайба
+    if user.get("tribe"):
+        btn_tribe = types.InlineKeyboardButton("🏰 Мой трайб", callback_data="tribe_menu")
+    else:
+        btn_tribe = types.InlineKeyboardButton("🏰 Трайбы", callback_data="tribe_menu")
+
+    btn_players = types.InlineKeyboardButton("👥 Игроки", callback_data="search_players")
     btn_stats       = types.InlineKeyboardButton("📊 Статистика", callback_data="stats_menu")
     btn_law         = types.InlineKeyboardButton("⚖️ Право",     callback_data="law_menu")
     btn_guide       = types.InlineKeyboardButton("📖 Гид",       callback_data="open_guide")
 
     markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(btn_tribes)
-    markup.add(btn_roles)
-    markup.add(btn_law)
-    markup.add(btn_stats)
+    markup.add(btn_tribe)
     markup.add(btn_players)
+    markup.add(btn_stats)
+    markup.add(btn_law)
     markup.add(btn_guide)
 
     # кнопка «Назад» в конец
@@ -2434,7 +2443,7 @@ def handle_tribes_page_safe(call):
             f"{i}. <b>{tribe['name']}</b> [{tribe['id']}]\n"
             f"   👥 {len(tribe['members'])}/{tribe.get('max_members', 10)}\n"
             f"   📅 {tribe['date_created']}\n"
-            f"   🏅 {level} ур.\n"
+            f"   🏅 LVL {level}\n"
             f"   📝 {tribe['desc'][:100]}...\n\n"
         )
 
@@ -2483,7 +2492,7 @@ def handle_tribes_list(m):
         level = tribe.get('level', 1)
         output.append(
             f"<b>{name}</b> [{tid}]\n"
-            f"👥 {members}/10 | 📅 {created} | 🏅 {level} ур.\n"
+            f"👥 {members}/10 | 📅 {created} | 🏅 LVL {level}\n"
             f"📝 {desc[:80]}..."
         )
     text = "\n\n".join(output)
@@ -2965,6 +2974,7 @@ def view_tribe(call):
     xp_needed = tribe_xp_to_next(level)
     filled = int(min(xp_cur, xp_needed) / xp_needed * 10)
     bar = "[" + "🟦" * filled + "⬜" * (10 - filled) + "]"
+    xp_info = f"({xp_cur}/{xp_needed})"
 
     text = (
         f"🏰 <b>Ваш трайб</b>\n"
@@ -2972,7 +2982,8 @@ def view_tribe(call):
         f"📛 <b>Название и ID:</b> {tribe['name']} [{tribe['id']}]\n"
         f"📝 <b>Описание:</b> {tribe['desc']}\n"
         f"📅 <b>Дата создания:</b> {tribe['date_created']}\n"
-        f"🏅 <b>Уровень трайба:</b> {level} {bar}\n"
+        f"🏆 <b>LVL:</b> {level} {xp_info}\n"
+        f"{bar}\n"
         f"👥 <b>Участников:</b> {len(tribe['members'])}/10\n\n"
         f"👤 <b>Состав:</b>\n{members_info}\n"
         f"🔗 <b>Беседа:</b> {tribe['chat_link'] or '—'}"
@@ -3841,7 +3852,9 @@ GUIDE_STEPS = [
             "• Не гриферить и не красть.\n"
             "• PvP — только по взаимному согласию.\n"
             "• Уважать чужие постройки.\n"
-            "• Без читов и эксплойтов.\n\n"
+            "• Без читов и эксплойтов.\n"
+            "• Никакой токсичности.\n"
+            "• Стройте в пределах своего участка.\n\n"
             "Полный свод правил: https://telegra.ph/Rules-BV-12-22"
         )
     },
@@ -3851,8 +3864,8 @@ GUIDE_STEPS = [
             "Заходи в «🛒 Маркет» каждый день:\n"
             "• 🎁 Ежедневный подарок\n"
             "• 😊 Пакеты эмодзи и кейсы\n"
-            "• ✨ Кастомизация ника и прочие плюшки\n\n"
-            "Ассортимент обновляется раз в сутки."
+            "• ✨ Кастомизация ника и прочие плюшки\n"
+            "• Подписка BVSharp"
         )
     },
     {
@@ -3868,33 +3881,31 @@ GUIDE_STEPS = [
     {
         "title": "Око Эндера 🧿 и Стрик 🔥",
         "text": (
-            "Любое действие = шанс получить 🧿.\n"
-            "Сохраняй ежедневный стрик, чтобы шанс и награды росли.\n"
-            "🧿 тратятся в Маркете на редчайшие эмодзи и услуги."
+            "Заходи каждый день и поддерживай стрик, чтобы получать больше опыта.\n"
+            "Око Эндера выдаётся за повышение уровня и тратится в Маркете на ценные награды."
         )
     },
     {
         "title": "Сообщество и Трайбы 🏰",
         "text": (
-            "Кнопка «🆕 Сообщество» → «🏘 Трайбы».\n"
-            "Создай клан или вступи в существующий. Глава может переименовывать и описывать трайб.\n"
-            "Тут же доступны роли сервера и поиск игроков."
+            "Через «Сообщество» открывается меню вашего трайба.\n"
+            "Здесь можно вступить или создать клан, а также подать заявку.\n"
+            "Доступен список должностей, поиск игроков и подача дела в суд.\n"
+            "При повышении LVL трайба все участники получают +10 🧿."
         )
     },
     {
         "title": "Поиск игроков и роли 🎯",
         "text": (
-            "В «Сообществе» доступны:\n"
-            "• Список должностей (Президент, Мэры…)\n"
-            "• Поиск игрока по нику или Telegram-username\n"
-            "• Заявки в трайбы или на должность"
+            "Ищи игроков по нику или Telegram.\n"
+            "Тут же можно посмотреть актуальные должности сервера."
         )
     },
     {
         "title": "Рейтинги и сезоны 📊",
         "text": (
             "Следи за топами игроков и трайбов в разделе «Статистика».\n"
-            "Историю развития смотри в «Архиве сезонов»."
+            "Архив прошедших сезонов ищи в «Архиве сезонов»."
         )
     },
     {
@@ -4022,9 +4033,22 @@ def add_tribe_xp(leader_id: str, amount: int, data: dict):
     tribe.setdefault("level", 1)
     tribe.setdefault("xp", 0)
     tribe["xp"] += amount
+    leveled = False
     while tribe["xp"] >= tribe_xp_to_next(tribe["level"]):
         tribe["xp"] -= tribe_xp_to_next(tribe["level"])
         tribe["level"] += 1
+        leveled = True
+    if leveled:
+        for member in tribe.get("members", []):
+            uid = member.get("user_id")
+            if uid in data.get("users", {}):
+                usr = data["users"][uid]
+                usr["ender_eyes"] = usr.get("ender_eyes", 0) + 10
+                try:
+                    bot.send_message(uid,
+                                     f"🎉 Трайб {tribe['name']} поднял уровень! +10 🧿 всем участникам.")
+                except Exception as e:
+                    print(f"[WARN] notify tribe level up {uid}: {e}")
 
 def add_user_xp(user_id: str, amount: int, data: dict):
     user = data["users"].setdefault(user_id, {})
