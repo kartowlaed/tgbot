@@ -132,19 +132,20 @@ def load_data():
     except json.decoder.JSONDecodeError as e:
         # если файл битый, делаем резервную копию перед восстановлением
         try:
-            backup = DATA_FILE + ".bak"
+            backup_path = DATA_FILE + ".bak"
             if os.path.exists(DATA_FILE):
-                os.replace(DATA_FILE, backup)
+                os.replace(DATA_FILE, backup_path)
         except Exception as backup_err:
             print(f"[Ошибка бэкапа data.json]: {backup_err}")
 
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(default_data, f, indent=4)
         try:
-            bot.send_message(
-                ADMIN_ID,
-                f"❗ Ошибка загрузки data.json: {e}. Создан новый файл, старая версия сохранена как {os.path.basename(backup)}."
+            msg = (
+                f"❗ Ошибка загрузки data.json: {e}. Создан новый файл, "
+                f"старая версия сохранена как {os.path.basename(backup_path)}."
             )
+            bot.send_message(ADMIN_ID, msg)
         except Exception as send_err:
             print(f"[Ошибка при уведомлении админа]: {send_err}")
         return default_data
