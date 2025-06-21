@@ -130,30 +130,33 @@ def load_data():
         return ordered_data
 
     except json.decoder.JSONDecodeError as e:
+ codex/добавить-новые-возможности-в-версию-6.6
         # если файл битый, делаем резервную копию перед восстановлением
-        try:
-            backup_path = DATA_FILE + ".bak"
-            if os.path.exists(DATA_FILE):
-                os.replace(DATA_FILE, backup_path)
-        except Exception as backup_err:
-            print(f"[Ошибка бэкапа data.json]: {backup_err}")
+try:
+    backup_path = DATA_FILE + ".bak"
+    if os.path.exists(DATA_FILE):
+        os.replace(DATA_FILE, backup_path)
+except Exception as backup_err:
+    print(f"[Ошибка бэкапа data.json]: {backup_err}")
 
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(default_data, f, indent=4)
-        try:
-            msg = f"❗ Ошибка загрузки data.json: {e}. Создан новый файл, старая версия сохранена как {os.path.basename(backup_path)}."
-            bot.send_message(ADMIN_ID, msg)
-        except Exception as send_err:
-            print(f"[Ошибка при уведомлении админа]: {send_err}")
-        return default_data
+with open(DATA_FILE, "w", encoding="utf-8") as f:
+    json.dump(default_data, f, indent=4)
+try:
+    msg = f"❗ Ошибка загрузки data.json: {e}. Создан новый файл, старая версия сохранена как {os.path.basename(backup_path)}."
+    bot.send_message(ADMIN_ID, msg)
+except Exception as send_err:
+    print(f"[Ошибка при уведомлении админа]: {send_err}")
+
 
 
 def save_data(data):
+ codex/добавить-новые-возможности-в-версию-6.6
     """Сохраняет данные атомарно, чтобы избежать повреждения файла."""
     tmp = DATA_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
     os.replace(tmp, DATA_FILE)
+ main
 
 # ---------- Работа с архивом сезонов ----------
 def load_seasons():
@@ -168,6 +171,7 @@ def load_seasons():
         return []
 
 def save_seasons(seasons):
+ codex/добавить-новые-возможности-в-версию-6.6
     """Атомарно сохраняет архив сезонов."""
     tmp = SEASONS_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
@@ -2091,6 +2095,8 @@ def community_menu(call):
     markup.row(btn_law, btn_stats, btn_players)
     markup.row(btn_guide)
 
+ main
+
     # кнопка «Назад» в конец
     btn_back = types.InlineKeyboardButton("🔙 Назад", callback_data="get_main_menu_markup")
     markup.add(btn_back)
@@ -3833,7 +3839,10 @@ def show_roles(call):
             text += f"▪️ <b>{role_name}</b> — <i>не назначено</i>\n"
 
     kb = types.InlineKeyboardMarkup()
+ codex/добавить-новые-возможности-в-версию-6.6
     kb.add(types.InlineKeyboardButton("🔙 Назад", callback_data="search_players"))
+
+ main
 
     try:
         bot.edit_message_text(
@@ -3868,6 +3877,7 @@ GUIDE_STEPS = [
             "- Без читов и эксплойтов.\n"
             "- Никакой токсичности.\n"
             "- Стройте в пределах своего участка.\n\n"
+ main
             "Полный свод правил: https://telegra.ph/Rules-BV-12-22"
         )
     },
