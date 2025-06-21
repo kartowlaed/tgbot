@@ -130,18 +130,33 @@ def load_data():
         return ordered_data
 
     except json.decoder.JSONDecodeError as e:
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(default_data, f, indent=4)
-        try:
-            bot.send_message(ADMIN_ID, f"❗ Ошибка загрузки data.json: {e}. Файл восстановлен.")
-        except Exception as send_err:
-            print(f"[Ошибка при уведомлении админа]: {send_err}")
-        return default_data
+ codex/добавить-новые-возможности-в-версию-6.6
+        # если файл битый, делаем резервную копию перед восстановлением
+try:
+    backup_path = DATA_FILE + ".bak"
+    if os.path.exists(DATA_FILE):
+        os.replace(DATA_FILE, backup_path)
+except Exception as backup_err:
+    print(f"[Ошибка бэкапа data.json]: {backup_err}")
+
+with open(DATA_FILE, "w", encoding="utf-8") as f:
+    json.dump(default_data, f, indent=4)
+try:
+    msg = f"❗ Ошибка загрузки data.json: {e}. Создан новый файл, старая версия сохранена как {os.path.basename(backup_path)}."
+    bot.send_message(ADMIN_ID, msg)
+except Exception as send_err:
+    print(f"[Ошибка при уведомлении админа]: {send_err}")
+
 
 
 def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
+ codex/добавить-новые-возможности-в-версию-6.6
+    """Сохраняет данные атомарно, чтобы избежать повреждения файла."""
+    tmp = DATA_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
+    os.replace(tmp, DATA_FILE)
+ main
 
 # ---------- Работа с архивом сезонов ----------
 def load_seasons():
@@ -156,8 +171,12 @@ def load_seasons():
         return []
 
 def save_seasons(seasons):
-    with open(SEASONS_FILE, "w", encoding="utf-8") as f:
+ codex/добавить-новые-возможности-в-версию-6.6
+    """Атомарно сохраняет архив сезонов."""
+    tmp = SEASONS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(seasons, f, indent=4)
+    os.replace(tmp, SEASONS_FILE)
 
 def valid_nickname(nickname):
     return bool(re.fullmatch(r"[A-Za-z0-9 _]{3,16}", nickname))
@@ -2066,17 +2085,17 @@ def community_menu(call):
     else:
         btn_tribe = types.InlineKeyboardButton("🏰 Трайбы", callback_data="tribe_menu")
 
-    btn_players = types.InlineKeyboardButton("👥 Игроки", callback_data="search_players")
-    btn_stats       = types.InlineKeyboardButton("📊 Статистика", callback_data="stats_menu")
-    btn_law         = types.InlineKeyboardButton("⚖️ Право",     callback_data="law_menu")
-    btn_guide       = types.InlineKeyboardButton("📖 Гид",       callback_data="open_guide")
+    btn_players = types.InlineKeyboardButton("👤 Игроки", callback_data="search_players")
+    btn_stats   = types.InlineKeyboardButton("📊 Статистика", callback_data="stats_menu")
+    btn_law     = types.InlineKeyboardButton("⚖️ Право",       callback_data="law_menu")
+    btn_guide   = types.InlineKeyboardButton("📖 Гид",         callback_data="open_guide")
 
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(btn_tribe)
-    markup.add(btn_players)
-    markup.add(btn_stats)
-    markup.add(btn_law)
-    markup.add(btn_guide)
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    markup.row(btn_tribe)
+    markup.row(btn_law, btn_stats, btn_players)
+    markup.row(btn_guide)
+
+ main
 
     # кнопка «Назад» в конец
     btn_back = types.InlineKeyboardButton("🔙 Назад", callback_data="get_main_menu_markup")
@@ -3820,7 +3839,10 @@ def show_roles(call):
             text += f"▪️ <b>{role_name}</b> — <i>не назначено</i>\n"
 
     kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("🔙 Назад", callback_data="tribe_menu"))
+ codex/добавить-новые-возможности-в-версию-6.6
+    kb.add(types.InlineKeyboardButton("🔙 Назад", callback_data="search_players"))
+
+ main
 
     try:
         bot.edit_message_text(
@@ -3849,12 +3871,13 @@ GUIDE_STEPS = [
     {
         "title": "Базовые правила 🛡",
         "text": (
-            "• Не гриферить и не красть.\n"
-            "• PvP — только по взаимному согласию.\n"
-            "• Уважать чужие постройки.\n"
-            "• Без читов и эксплойтов.\n"
-            "• Никакой токсичности.\n"
-            "• Стройте в пределах своего участка.\n\n"
+            "- Не гриферить и не красть.\n"
+            "- PvP — только по взаимному согласию.\n"
+            "- Уважать чужие постройки.\n"
+            "- Без читов и эксплойтов.\n"
+            "- Никакой токсичности.\n"
+            "- Стройте в пределах своего участка.\n\n"
+ main
             "Полный свод правил: https://telegra.ph/Rules-BV-12-22"
         )
     },
