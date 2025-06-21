@@ -141,10 +141,7 @@ def load_data():
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(default_data, f, indent=4)
         try:
-            msg = (
-                f"❗ Ошибка загрузки data.json: {e}. Создан новый файл, "
-                f"старая версия сохранена как {os.path.basename(backup_path)}."
-            )
+            msg = f"❗ Ошибка загрузки data.json: {e}. Создан новый файл, старая версия сохранена как {os.path.basename(backup_path)}."
             bot.send_message(ADMIN_ID, msg)
         except Exception as send_err:
             print(f"[Ошибка при уведомлении админа]: {send_err}")
