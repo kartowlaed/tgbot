@@ -29,7 +29,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Пути к файлам
 DATA_FILE = os.path.join(BASE_DIR, "data.json")
 # Единый файл со всеми бюрократическими данными (дела, штрафы и т.д.)
-JOHN_FILE = os.path.join(BASE_DIR, "john.json")
+JOHN_FILE = os.path.join(BASE_DIR, ".john")
 
 # Global dictionary for user states
 user_states = {}  # { user_id: { "state": ..., "temp_data": { ... } } }
@@ -201,7 +201,7 @@ def save_seasons(seasons):
     os.replace(tmp, SEASONS_FILE)
 
 # ---------- Судебные дела ----------
-# ---------- Работа с john.json (дела и штрафы) ----------
+# ---------- Работа с .john (дела и штрафы) ----------
 def load_john():
     default = {
         "cases": {"last_id": 0, "active": [], "archive": []},
