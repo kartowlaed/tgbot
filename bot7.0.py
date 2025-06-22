@@ -51,10 +51,6 @@ DEFAULT_SEASONS = [
     {"number": 10, "name": "BVSolar", "dates": "01.07.2025", "description": "", "pages": []},
 ]
 
-def get_root_path(filename):
-    base_dir = os.path.dirname(os.path.abspath(__file__))  # путь к корню бота
-    return os.path.join(base_dir, filename)
-
 # Пониженные цены на кейсы (скидка 15% с округлением до числа, заканчивающегося на 5, 9 или 0)
 case_details = [
     {"name": "Деревянный сундук", "price": 69, "image": "wood.png", "chance": 35,
@@ -679,14 +675,6 @@ def get_daily_gift_label(user):
 
 
 
-@bot.callback_query_handler(func=lambda call: call.data == "market_main")
-def handle_market_navigation(call):
-    user_id = str(call.from_user.id)
-    # Формируем разметку, передав user_id
-    markup = market_main_markup(user_id)
-    # Отправляем или редактируем текущее сообщение
-    send_or_edit_message(bot, call, MARKET_WELCOME_TEXT, markup)
-
 
 def market_main_markup(user_id):
     """
@@ -1247,35 +1235,6 @@ def activate_bv_plus(call):
     )
 
 
-# ------------------- Логика выдачи эмодзи и кейсов -------------------
-def award_emoji(user_id, category_index):
-    data = load_data()
-    user = data["users"].get(user_id)
-
-    if not user:
-        return None, "Пользователь не найден."
-    if "emojis" not in user:
-        user["emojis"] = {}
-    cat_key = str(category_index)
-    if cat_key not in user["emojis"]:
-        user["emojis"][cat_key] = []
-    owned = user["emojis"][cat_key]
-    total = emoji_details[category_index]["quantity"]
-    if len(owned) >= total:
-        return None, f"Вы уже собрали все эмодзи в категории {emoji_details[category_index]['name']}."
-    available = [num for num in range(1, total + 1) if num not in owned]
-    awarded = random.choice(available)
-    user["emojis"][cat_key].append(awarded)
-    if "purchases" not in user:
-        user["purchases"] = []
-    user["purchases"].append({
-        "item": f"Получено из кейса: {emoji_details[category_index]['name']} №{awarded}",
-        "price": 0,
-        "date": datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-    })
-    save_data(data)
-    return awarded, None
-
 # ------------------- Просмотр информации об эмодзи -------------------
 def get_path(filename):
     return os.path.join(os.path.dirname(__file__), filename)
@@ -1300,10 +1259,6 @@ def show_emoji_info(chat_id, message_id, index):
 
 
 # ------------------- Просмотр информации о кейсе -------------------
-
-
-def get_path(filename):
-    return os.path.join(os.path.dirname(__file__), filename)
 
 def show_case_info(chat_id, message_id, index):
     case_item = case_details[index]
@@ -1822,7 +1777,8 @@ def handle_back(call):
 ])
 def handle_market_navigation(call):
     if call.data == "market_main":
-        send_or_edit_message(bot, call, MARKET_WELCOME_TEXT, market_main_markup())
+        user_id = str(call.from_user.id)
+        send_or_edit_message(bot, call, MARKET_WELCOME_TEXT, market_main_markup(user_id))
 
     elif call.data in ["customization", "customization_back"]:
         send_or_edit_message(bot, call, CUSTOMIZATION_TEXT, customization_markup())
@@ -3536,83 +3492,6 @@ def create_promo(code, reward, max_uses=1, unique=True, expires_at=None, delete_
 
 
 
-#--------------------Реферал---------------------------
-
-@bot.message_handler(
-    func=lambda message: str(message.from_user.id) in user_states
-    and user_states[str(message.from_user.id)].get("state") == "awaiting_referral"
-)
-def handle_referral(message):
-    user_id = str(message.from_user.id)
-    text    = message.text.strip()
-    temp    = user_states[user_id]["temp_data"]
-
-    # Обрабатываем ввод реферала
-    if text.lower() == "пропустить":
-        temp["referral"] = None
-    else:
-        if "," in text:
-            nick, uname = [p.strip() for p in text.split(",", 1)]
-            if uname.startswith("@"):
-                uname = uname[1:]
-            temp["referral"] = {"nickname": nick, "telegram_username": uname}
-        else:
-            temp["referral"] = text
-
-    bot.send_message(message.chat.id, "Реферальная информация принята.", 
-                     reply_markup=types.ReplyKeyboardRemove())
-
-    # Общие поля
-    temp["telegram_username"]  = message.from_user.username or ""
-    temp["registration_date"]  = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-    temp.setdefault("balance", 0)
-    temp.setdefault("purchases", [])
-    temp.setdefault("promo_codes_used", [])
-    temp.setdefault("emojis", {})
-
-    data = load_data()
-
-    # Сохраняем либо в minors, либо в users
-    if temp.get("age", 0) < 18:
-        data.setdefault("minors", {})[user_id] = temp
-    else:
-        data.setdefault("users", {})[user_id]  = temp
-
-    # Регистрируем заявку для модерации
-    referral_info = temp["referral"]
-    if isinstance(referral_info, dict):
-        ref_text = f"{referral_info['nickname']} (@{referral_info['telegram_username']})"
-    else:
-        ref_text = referral_info or "Нет"
-
-    data.setdefault("registration_requests", []).append({
-        "user_id":          user_id,
-        "nickname":         temp["nickname"],
-        "age":              temp["age"],
-        "registration_date": temp["registration_date"],
-        "referral":         ref_text
-    })
-
-    save_data(data)
-
-    # Ответ пользователю
-    if temp.get("age", 0) < 18:
-        bot.send_message(
-            message.chat.id,
-            "🧸 Ваша заявка принята. Вы пока несовершеннолетний — доступ в бот будет после одобрения.\n"
-            "Вернуться в меню можно командой /start",
-            reply_markup=minor_get_main_menu_markup(user_id)
-        )
-    else:
-        bot.send_message(
-            message.chat.id,
-            "✅ Ваша заявка принята, ожидайте её одобрения модератором.\n"
-            "Вернуться в меню можно командой /start",
-            reply_markup=get_main_menu_markup(user_id)
-        )
-
-    # Убираем состояние
-    user_states.pop(user_id, None)
 
 
 #------------------- Стрики ----------------------
