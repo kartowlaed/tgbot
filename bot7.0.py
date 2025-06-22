@@ -3056,62 +3056,6 @@ def award_emoji(user_id: str, cat_key: str):
     # Для именованных пока нет автоматической выдачи
     return None
 
-# -------------------- Подача заявки на вступление --------------------
-@bot.callback_query_handler(func=lambda call: call.data == "submit_tribe_request")
-def tribe_join_request(call):
-    msg = bot.send_message(call.message.chat.id,
-        "Введите <b>[ID]</b> трайба, в который хотите вступить (указан рядом с названием):",
-        parse_mode="HTML")
-    bot.register_next_step_handler(msg, process_join_request)
-
-def process_join_request(message):
-    user_id = str(message.from_user.id)
-    req_id = message.text.strip().upper()
-    data = load_data()
-    target_tribe = None
-    target_leader = None
-    for leader_id, tribe in data.get("tribes", {}).items():
-        if tribe["id"] == req_id:
-            target_tribe = tribe
-            target_leader = leader_id
-            break
-    if not target_tribe:
-        bot.send_message(message.chat.id, "❌ Трайб с таким [ID] не найден.")
-        return
-    if data["users"].get(user_id, {}).get("tribe"):
-        bot.send_message(message.chat.id, "❌ Вы уже состоите в трайбе.")
-        return
-    for tribe in data.get("tribes", {}).values():
-        for req in tribe.get("join_requests", []):
-            if req["user_id"] == user_id:
-                bot.send_message(message.chat.id, "❗ Вы уже подали заявку.")
-                return
-    if len(target_tribe.get("members", [])) >= target_tribe.get("max_members", 10):
-        bot.send_message(message.chat.id, "❌ В этом трайбе достигнут максимум участников.")
-        return
-    user_record = data["users"].get(user_id, {})
-    join_req = {
-        "user_id": user_id,
-        "nickname": user_record.get("nickname", ""),
-        "telegram_username": user_record.get("telegram_username", ""),
-        "registration_date": user_record.get("registration_date", "")
-    }
-    target_tribe.setdefault("join_requests", []).append(join_req)
-    save_data(data)
-    req_text = (
-        f"<b>📩 Заявка в трайб</b>\n"
-        f"👤 Ник: {join_req['nickname']}\n"
-        f"🔗 Telegram: @{join_req['telegram_username']}\n"
-        f"📅 Дата: {join_req['registration_date']}"
-    )
-    kb = types.InlineKeyboardMarkup()
-    kb.row(
-        types.InlineKeyboardButton("✅ Принять", callback_data=f"join_accept_{user_id}_{target_leader}"),
-        types.InlineKeyboardButton("❌ Отклонить", callback_data=f"join_reject_{user_id}_{target_leader}")
-    )
-    bot.send_message(target_leader, req_text, reply_markup=kb, parse_mode="HTML")
-    bot.send_message(message.chat.id, "✅ Ваша заявка отправлена Главе трайба.")
-
 # -------------------- Обработка заявки (для Главы) --------------------
 @bot.callback_query_handler(func=lambda call: call.data.startswith("join_accept_") or call.data.startswith("join_reject_"))
 def handle_join_response(call):
