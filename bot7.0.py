@@ -4409,13 +4409,6 @@ def award_xp(user: dict, base_xp: int) -> int:
     user.setdefault("xp", 0)
     user["xp"] += xp_add
     return xp_add
-
 # ───────────── Конец блока XP ─────────────
 
-
 bot.infinity_polling(timeout=90, long_polling_timeout=45)
-
-
-
-
-
