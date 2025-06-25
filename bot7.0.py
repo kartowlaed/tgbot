@@ -202,7 +202,7 @@ def save_seasons(seasons):
 
 # ---------- Судебные дела ----------
 # ---------- Работа с police.json (дела и штрафы) ----------
-def load_john():
+def load_police_data():
     default = {
         "cases": {"last_id": 0, "active": [], "archive": []},
         "fines": {"last_id": 0, "active": [], "closed": []}
@@ -222,7 +222,7 @@ def load_john():
     return data
 
 
-def save_john(data):
+def save_police_data(data):
     tmp = POLICE_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
@@ -230,24 +230,24 @@ def save_john(data):
 
 
 def load_cases():
-    return load_john().get("cases", {"last_id": 0, "active": [], "archive": []})
+    return load_police_data().get("cases", {"last_id": 0, "active": [], "archive": []})
 
 
 def save_cases(cases):
-    data = load_john()
+    data = load_police_data()
     data["cases"] = cases
-    save_john(data)
+    save_police_data(data)
 
 
 # ---------- Штрафы ----------
 def load_fines():
-    return load_john().get("fines", {"last_id": 0, "active": [], "closed": []})
+    return load_police_data().get("fines", {"last_id": 0, "active": [], "closed": []})
 
 
 def save_fines(fines):
-    data = load_john()
+    data = load_police_data()
     data["fines"] = fines
-    save_john(data)
+    save_police_data(data)
 
 
 def add_fine(fine):
