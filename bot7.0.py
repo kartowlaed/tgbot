@@ -3845,9 +3845,8 @@ def show_season_archive(call):
         text += "\nАрхив сезонов пуст."
 
     markup = types.InlineKeyboardMarkup()
-    if call.from_user.id == ADMIN_ID:
-        markup.add(types.InlineKeyboardButton("➕ Добавить сезон", callback_data="season_add"))
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="stats_menu"))
+    text += "\n\nСоздание новых сезонов отключено."
     bot.edit_message_text(
         text,
         call.message.chat.id,
@@ -3889,20 +3888,13 @@ def show_season_detail(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == "season_add")
 def add_season_start(call):
-    if call.from_user.id != ADMIN_ID:
-        bot.answer_callback_query(call.id, "Нет доступа")
-        return
-    msg = bot.send_message(call.message.chat.id, "Введите название сезона:")
-    user_states[str(call.from_user.id)] = {"state": "awaiting_season_title", "temp_data": {}}
-    bot.register_next_step_handler(msg, process_season_title)
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, "Создание сезонов отключено.")
 
 @bot.message_handler(commands=["add_season"])
 def cmd_add_season(message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    msg = bot.send_message(message.chat.id, "Введите название сезона:")
-    user_states[str(message.from_user.id)] = {"state": "awaiting_season_title", "temp_data": {}}
-    bot.register_next_step_handler(msg, process_season_title)
+    if message.from_user.id == ADMIN_ID:
+        bot.send_message(message.chat.id, "Создание сезонов отключено.")
 
 @bot.message_handler(func=lambda m: str(m.from_user.id) in user_states and user_states[str(m.from_user.id)].get("state") == "awaiting_season_title")
 def process_season_title(message):
@@ -4331,7 +4323,17 @@ GUIDE_STEPS = [
         "title": "Рейтинги и сезоны 📊",
         "text": (
             "Следи за топами игроков и трайбов в разделе «Статистика».\n"
-            "Архив прошедших сезонов ищи в «Архиве сезонов»."
+            "Архив прошедших сезонов ищи в «Архиве сезонов».\n\n"
+            "10.05.2020 – СБ1\n"
+            "26.05.2020 – СБКарантин(м)\n"
+            "02.02.2022 – СБ2\n"
+            "19.08.2023 – СБCreative\n"
+            "13.06.2024 – СБTravel\n"
+            "01.08.2024 – СБFIRE\n"
+            "30.11.2024 – BVMods(м)\n"
+            "29.12.2024 – BVNova\n"
+            "22.03.2025 – BVCastel(м)\n"
+            "01.07.2025 – BVSolar"
         )
     },
     {
