@@ -29,7 +29,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Пути к файлам
 DATA_FILE = os.path.join(BASE_DIR, "data.json")
 # Единый файл со всеми бюрократическими данными (дела, штрафы и т.д.)
-JOHN_FILE = os.path.join(BASE_DIR, ".john")
+POLICE_FILE = os.path.join(BASE_DIR, "police.json")
 
 # Global dictionary for user states
 user_states = {}  # { user_id: { "state": ..., "temp_data": { ... } } }
@@ -201,18 +201,18 @@ def save_seasons(seasons):
     os.replace(tmp, SEASONS_FILE)
 
 # ---------- Судебные дела ----------
-# ---------- Работа с .john (дела и штрафы) ----------
+# ---------- Работа с police.json (дела и штрафы) ----------
 def load_john():
     default = {
         "cases": {"last_id": 0, "active": [], "archive": []},
         "fines": {"last_id": 0, "active": [], "closed": []}
     }
-    if not os.path.exists(JOHN_FILE):
-        with open(JOHN_FILE, "w", encoding="utf-8") as f:
+    if not os.path.exists(POLICE_FILE):
+        with open(POLICE_FILE, "w", encoding="utf-8") as f:
             json.dump(default, f, indent=4)
         return default
     try:
-        with open(JOHN_FILE, "r", encoding="utf-8") as f:
+        with open(POLICE_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
     except json.decoder.JSONDecodeError:
         data = default
@@ -223,10 +223,10 @@ def load_john():
 
 
 def save_john(data):
-    tmp = JOHN_FILE + ".tmp"
+    tmp = POLICE_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
-    os.replace(tmp, JOHN_FILE)
+    os.replace(tmp, POLICE_FILE)
 
 
 def load_cases():
