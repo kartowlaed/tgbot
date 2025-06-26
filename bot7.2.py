@@ -1,6 +1,6 @@
 import time
 import telebot
-from telebot import types 
+from telebot import types
 from types import SimpleNamespace
 from datetime import date, datetime, timedelta
 import json
@@ -14,11 +14,15 @@ from telebot.types import InputMediaPhoto
 from collections import OrderedDict
 from random import choice
 import math
+from dotenv import load_dotenv
 
-TOKEN = "8170890381:AAEIX0qWiDnbCj_8794VZpIMEiS_feZQdAs"
+load_dotenv()
+TOKEN = os.getenv("8170890381:AAEIX0qWiDnbCj_8794VZpIMEiS_feZQdAs"")
+if not TOKEN:
+    raise RuntimeError("TELEGRAM_TOKEN is not set")
 
 ADMIN_ID = 827377121           # Для покупок, разбана и регистрации
-BOT_VERSION = "7.0"            # Текущая версия бота
+BOT_VERSION = "7.2"            # Текущая версия бота
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -29,7 +33,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Пути к файлам
 DATA_FILE = os.path.join(BASE_DIR, "data.json")
 # Единый файл со всеми бюрократическими данными (дела, штрафы и т.д.)
-JOHN_FILE = os.path.join(BASE_DIR, ".john")
+POLICE_FILE = os.path.join(BASE_DIR, "police.json")
 
 # Global dictionary for user states
 user_states = {}  # { user_id: { "state": ..., "temp_data": { ... } } }
@@ -75,11 +79,15 @@ def minor_get_main_menu_markup(user_id):
     return markup
 
 
-def find_user_by_nick_or_username(nick, data):
+def find_user_by_nick_or_username(nick, data, include_banned=False):
     nick = nick.lstrip("@").lower()
     for uid, u in data.get("users", {}).items():
         if u.get("nickname", "").lower() == nick or u.get("telegram_username", "").lower() == nick:
             return uid
+    if include_banned:
+        for uid, u in data.get("banned_users", {}).items():
+            if u.get("nickname", "").lower() == nick or u.get("telegram_username", "").lower() == nick:
+                return uid
     return None
 
 
@@ -205,18 +213,18 @@ def save_seasons(seasons):
     os.replace(tmp, SEASONS_FILE)
 
 # ---------- Судебные дела ----------
-# ---------- Работа с .john (дела и штрафы) ----------
-def load_john():
+# ---------- Работа с police.json (дела и штрафы) ----------
+def load_police():
     default = {
         "cases": {"last_id": 0, "active": [], "archive": []},
         "fines": {"last_id": 0, "active": [], "closed": []}
     }
-    if not os.path.exists(JOHN_FILE):
-        with open(JOHN_FILE, "w", encoding="utf-8") as f:
+    if not os.path.exists(POLICE_FILE):
+        with open(POLICE_FILE, "w", encoding="utf-8") as f:
             json.dump(default, f, indent=4)
         return default
     try:
-        with open(JOHN_FILE, "r", encoding="utf-8") as f:
+        with open(POLICE_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
     except json.decoder.JSONDecodeError:
         data = default
@@ -226,32 +234,32 @@ def load_john():
     return data
 
 
-def save_john(data):
-    tmp = JOHN_FILE + ".tmp"
+def save_police(data):
+    tmp = POLICE_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
-    os.replace(tmp, JOHN_FILE)
+    os.replace(tmp, POLICE_FILE)
 
 
 def load_cases():
-    return load_john().get("cases", {"last_id": 0, "active": [], "archive": []})
+    return load_police().get("cases", {"last_id": 0, "active": [], "archive": []})
 
 
 def save_cases(cases):
-    data = load_john()
+    data = load_police()
     data["cases"] = cases
-    save_john(data)
+    save_police(data)
 
 
 # ---------- Штрафы ----------
 def load_fines():
-    return load_john().get("fines", {"last_id": 0, "active": [], "closed": []})
+    return load_police().get("fines", {"last_id": 0, "active": [], "closed": []})
 
 
 def save_fines(fines):
-    data = load_john()
+    data = load_police()
     data["fines"] = fines
-    save_john(data)
+    save_police(data)
 
 
 def add_fine(fine):
@@ -784,6 +792,7 @@ def send_main_menu(user_id, chat_id):
     
     tips = [
     "🧿 Око Эндера — твоя активность. Чем активнее, тем больше наград!",
+    "⏰ До 1 июля создай TRIBE и получи опыт Ока Эндера!",
     "🎁 Заходи в Маркет каждый день — там могут появиться подарки!",
     "🔥 Сохраняй стрик, чтобы получать больше Оков Эндера и бонусов!",
     "🎯 Выполняй любые действия в боте — за них ты получаешь 🧿 Око Эндера!",
@@ -865,6 +874,19 @@ def admin_menu(message):
         reply_markup=get_admin_markup_new()
     )
 
+
+@bot.callback_query_handler(func=lambda c: c.data == "open_admin_menu")
+def open_admin_menu(call):
+    if call.from_user.id != ADMIN_ID:
+        return bot.answer_callback_query(call.id, "Нет доступа")
+    bot.edit_message_text(
+        "🔧 <b>Админское меню</b>:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="HTML",
+        reply_markup=get_admin_markup_new()
+    )
+
 # ——— Расширяем кнопку «Добавить опыта» — теперь полноценная выдача нескольким игрокам ———
 @bot.callback_query_handler(lambda c: c.data == "admin_add_xp")
 def admin_add_xp(call):
@@ -939,6 +961,7 @@ def admin_promos_menu(call):
         types.InlineKeyboardButton("Удалить промокод",     callback_data="admin_del_promo"),
         types.InlineKeyboardButton("Начислить средства",   callback_data="admin_credit_funds")
     )
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="open_admin_menu"))
     bot.edit_message_text(
         "📣 <b>Меню промокодов</b>:",
         call.message.chat.id, call.message.message_id,
@@ -955,6 +978,7 @@ def admin_notifications_menu(call):
         types.InlineKeyboardButton("Технические",            callback_data="admin_notification_technical"),
         types.InlineKeyboardButton("Новости сервера",        callback_data="admin_notification_server")
     )
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="open_admin_menu"))
     bot.edit_message_text(
         "🔔 <b>Меню оповещений</b>:",
         call.message.chat.id, call.message.message_id,
@@ -1037,6 +1061,7 @@ def admin_roles_menu(call):
         types.InlineKeyboardButton("Изменить роль",  callback_data="admin_modify_role"),
         types.InlineKeyboardButton("Удалить роль",   callback_data="admin_del_role")
     )
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="open_admin_menu"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id,
                           parse_mode="HTML", reply_markup=markup)
 
@@ -1048,11 +1073,70 @@ def admin_bans_menu(call):
         types.InlineKeyboardButton("🔒 Забанить",  callback_data="admin_ban_user"),
         types.InlineKeyboardButton("🔓 Разбанить", callback_data="admin_unban_user")
     )
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="open_admin_menu"))
     bot.edit_message_text(
         "⛔ <b>Меню банов</b>:",
         call.message.chat.id, call.message.message_id,
         parse_mode="HTML", reply_markup=markup
     )
+
+
+@bot.callback_query_handler(lambda c: c.data == "admin_ban_user")
+def admin_ban_user_start(call):
+    if call.from_user.id != ADMIN_ID:
+        return bot.answer_callback_query(call.id, "Нет доступа")
+    msg = bot.send_message(call.message.chat.id, "Введите ник или @username для бана:")
+    bot.register_next_step_handler(msg, process_admin_ban_user)
+
+
+def process_admin_ban_user(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    target = message.text.strip()
+    data = load_data()
+    uid = find_user_by_nick_or_username(target, data)
+    if not uid:
+        return bot.send_message(message.chat.id, "Пользователь не найден.")
+    user = data["users"].pop(uid, None)
+    if not user:
+        return bot.send_message(message.chat.id, "Уже забанен.")
+    user["status"] = "banned"
+    data.setdefault("banned_users", {})[uid] = user
+    save_data(data)
+    bot.send_message(message.chat.id, f"Пользователь {user.get('nickname', uid)} забанен.")
+    try:
+        bot.send_message(int(uid), "⛔ Вы были забанены администрацией.")
+    except ApiTelegramException as e:
+        if e.error_code != 403:
+            print(f"[BAN_NOTIFY_ERROR] {e}")
+
+
+@bot.callback_query_handler(lambda c: c.data == "admin_unban_user")
+def admin_unban_user_start(call):
+    if call.from_user.id != ADMIN_ID:
+        return bot.answer_callback_query(call.id, "Нет доступа")
+    msg = bot.send_message(call.message.chat.id, "Введите ник или @username для разбана:")
+    bot.register_next_step_handler(msg, process_admin_unban_user)
+
+
+def process_admin_unban_user(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    target = message.text.strip()
+    data = load_data()
+    uid = find_user_by_nick_or_username(target, data, include_banned=True)
+    if not uid or uid not in data.get("banned_users", {}):
+        return bot.send_message(message.chat.id, "Пользователь не найден в бане.")
+    user = data["banned_users"].pop(uid)
+    user["status"] = "user"
+    data["users"][uid] = user
+    save_data(data)
+    bot.send_message(message.chat.id, f"Пользователь {user.get('nickname', uid)} разбанен.")
+    try:
+        bot.send_message(int(uid), "✅ Ваш бан снят администрацией.")
+    except ApiTelegramException as e:
+        if e.error_code != 403:
+            print(f"[UNBAN_NOTIFY_ERROR] {e}")
 
 # ——— Подменю «Эмодзи» с массовой выдачей/удалением по никам ———
 
@@ -2105,7 +2189,7 @@ def handle_services(call):
 #-------------Общение---------------
 
 def process_player_search(message):
-    query = message.text.strip().lower()
+    query = message.text.strip().lstrip('@').lower()
     data = load_data()
     found = False
 
@@ -2131,7 +2215,7 @@ def process_player_search(message):
             username = user.get("telegram_username", "").lower()
             bvtag = str(user.get("bvtag", "")).lower()
 
-            if (query in nickname or query in username or query in bvtag or (uid is not None and query == str(uid))):
+            if (query == nickname or query == username or query == bvtag or (uid is not None and query == str(uid))):
                 # Добавляем статус в зависимости от категории
                 if category == "users":
                     user["status"] = "user"
@@ -2219,7 +2303,7 @@ def community_menu(call):
 
     # динамичная кнопка трайба
     if user.get("tribe"):
-        btn_tribe = types.InlineKeyboardButton("🏰 Мой трайб", callback_data="tribe_menu")
+        btn_tribe = types.InlineKeyboardButton("🏰 Мой трайб", callback_data="view_tribe")
     else:
         btn_tribe = types.InlineKeyboardButton("🏰 Трайбы", callback_data="tribe_menu")
 
@@ -2277,13 +2361,15 @@ def law_menu(call):
     user_id = str(call.from_user.id)
     data = load_data()
     user = data["users"].get(user_id, {})
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(types.InlineKeyboardButton("📩 Подать дело", callback_data="create_case"))
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.row(types.InlineKeyboardButton("📩 Подать дело", callback_data="create_case"))
+    row = []
     if user_has_court_access(user):
-        markup.add(types.InlineKeyboardButton("⚖️ Судебные дела", callback_data="law_cases"))
-    markup.add(types.InlineKeyboardButton("🗄️ Архив дел", callback_data="law_archive"))
-    markup.add(types.InlineKeyboardButton("💸 Штрафы", callback_data="fines_menu"))
-    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="community_menu"))
+        row.append(types.InlineKeyboardButton("⚖️ Судебные дела", callback_data="law_cases"))
+    row.append(types.InlineKeyboardButton("🗄️ Архив дел", callback_data="law_archive"))
+    markup.row(*row)
+    markup.row(types.InlineKeyboardButton("💸 Штрафы", callback_data="fines_menu"))
+    markup.row(types.InlineKeyboardButton("🔙 Назад", callback_data="community_menu"))
     bot.edit_message_text(
         "⚖️ <b>Право</b>: выбери раздел",
         call.message.chat.id,
@@ -2313,13 +2399,20 @@ def case_set_brief(m):
     uid = str(m.from_user.id)
     user_states[uid]["temp_data"]["brief"] = m.text.strip()
     user_states[uid]["state"] = "court_accused"
-    bot.send_message(m.chat.id, "На кого подаёте в суд? Укажите ник или @username:")
+    bot.send_message(m.chat.id, "На кого подаёте в суд? Укажите ник/@username или '-' если неизвестно:")
 
 
 @bot.message_handler(func=lambda m: str(m.from_user.id) in user_states and user_states[str(m.from_user.id)].get("state") == "court_accused")
 def case_set_accused(m):
     uid = str(m.from_user.id)
     user_states[uid]["temp_data"]["accused"] = m.text.strip()
+    data = load_data()
+    acc = m.text.strip()
+    if acc != "-":
+        acc_id = find_user_by_nick_or_username(acc, data, include_banned=True)
+    else:
+        acc_id = None
+    user_states[uid]["temp_data"]["accused_id"] = acc_id
     user_states[uid]["state"] = "court_description"
     bot.send_message(m.chat.id, "Полное описание дела:")
 
@@ -2371,6 +2464,16 @@ def finalize_case(call):
     info["creator_id"] = uid
     case_id = add_case(info)
     bot.edit_message_text(f"✅ Дело №{case_id} создано.", call.message.chat.id, call.message.message_id)
+    acc_id = info.get("accused_id")
+    if acc_id:
+        try:
+            bot.send_message(int(acc_id), f"⚖️ Против вас открыто дело №{case_id}: {info.get('title')}")
+            data = load_data()
+            add_user_notification_record(data, acc_id, f"Против вас открыто дело №{case_id}")
+            save_data(data)
+        except ApiTelegramException as e:
+            if e.error_code != 403:
+                print(f"[CASE_NOTIFY_ERROR] {e}")
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "law_cases")
@@ -2439,7 +2542,9 @@ def verdict_receive(m):
         cases.setdefault("archive", []).append(case)
         save_cases(cases)
     if case and case.get("compensation"):
-        user_states[uid] = {"state": "fine_amount", "temp_data": {"case_id": case_id, "target": case["accused"]}}
+        user_states[uid] = {"state": "fine_amount", "temp_data": {"case_id": case_id, "target_nick": case.get("accused"), "target_user": ""}}
+        if case.get("accused_id"):
+            user_states[uid]["temp_data"]["target_user"] = str(case.get("accused_id"))
         bot.send_message(m.chat.id, f"Дело №{case_id} закрыто. Введите сумму штрафа:")
         return
     user_states.pop(uid, None)
@@ -2461,9 +2566,42 @@ def reject_case(call):
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "law_archive")
-def law_archive_placeholder(call):
-    bot.answer_callback_query(call.id)
-    bot.send_message(call.message.chat.id, "Раздел в разработке.")
+def show_law_archive(call):
+    user_id = str(call.from_user.id)
+    data = load_data()
+    user = data["users"].get(user_id, {})
+    if not user_has_court_access(user):
+        bot.answer_callback_query(call.id, "Нет доступа")
+        return
+    cases = load_cases().get("archive", [])
+    markup = types.InlineKeyboardMarkup()
+    for c in cases:
+        markup.add(types.InlineKeyboardButton(f"№{c['id']} {c['title']}", callback_data=f"arch_case_{c['id']}"))
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="law_menu"))
+    text = "Архив пуст." if not cases else "Выберите дело из архива:"
+    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("arch_case_"))
+def show_archived_case(call):
+    case_id = call.data.split("_")[2]
+    cases = load_cases().get("archive", [])
+    case = next((c for c in cases if c["id"] == case_id), None)
+    if not case:
+        bot.answer_callback_query(call.id, "Не найдено")
+        return
+    text = (
+        f"<b>Дело №{case['id']}</b>\n"
+        f"Название: {case['title']}\n"
+        f"Кратко: {case['brief']}\n"
+        f"Обвиняемый: {case['accused']}\n"
+        f"Описание: {case['description']}\n"
+        f"Компенсация: {case['compensation']}\n"
+        f"Вердикт: {case.get('verdict','—')}"
+    )
+    markup = types.InlineKeyboardMarkup().add(
+        types.InlineKeyboardButton("🔙 Назад", callback_data="law_archive")
+    )
+    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "fines_menu")
@@ -2508,14 +2646,22 @@ def fines_list(call):
 @bot.callback_query_handler(func=lambda call: call.data == "fine_create")
 def fine_create_start(call):
     uid = str(call.from_user.id)
-    user_states[uid] = {"state": "fine_target", "temp_data": {}}
-    bot.send_message(call.message.chat.id, "На кого выписывается штраф?")
+    user_states[uid] = {"state": "fine_target_nick", "temp_data": {}}
+    bot.send_message(call.message.chat.id, "Ник игрока для штрафа:")
 
 
-@bot.message_handler(func=lambda m: str(m.from_user.id) in user_states and user_states[str(m.from_user.id)].get("state") == "fine_target")
-def fine_set_target(m):
+@bot.message_handler(func=lambda m: str(m.from_user.id) in user_states and user_states[str(m.from_user.id)].get("state") == "fine_target_nick")
+def fine_set_target_nick(m):
     uid = str(m.from_user.id)
-    user_states[uid]["temp_data"]["target"] = m.text.strip()
+    user_states[uid]["temp_data"]["target_nick"] = m.text.strip()
+    user_states[uid]["state"] = "fine_target_user"
+    bot.send_message(m.chat.id, "@username игрока:")
+
+
+@bot.message_handler(func=lambda m: str(m.from_user.id) in user_states and user_states[str(m.from_user.id)].get("state") == "fine_target_user")
+def fine_set_target_user(m):
+    uid = str(m.from_user.id)
+    user_states[uid]["temp_data"]["target_user"] = m.text.strip().lstrip('@')
     user_states[uid]["state"] = "fine_amount"
     bot.send_message(m.chat.id, "Сумма штрафа:")
 
@@ -2542,8 +2688,20 @@ def fine_set_reason(m):
     info = user_states.pop(uid, {}).get("temp_data", {})
     info["reason"] = m.text.strip()
     info["creator_id"] = uid
+    data = load_data()
+    target_lookup = info.get("target_user") or info.get("target_nick")
+    target_id = find_user_by_nick_or_username(target_lookup, data, include_banned=True) if target_lookup else None
+    info["target"] = target_lookup
     fine_id = add_fine(info)
     bot.send_message(m.chat.id, f"Штраф #{fine_id} создан.")
+    if target_id:
+        try:
+            bot.send_message(int(target_id), f"💸 Вам выписан штраф #{fine_id}: {info['reason']}")
+            add_user_notification_record(data, target_id, f"Получен штраф #{fine_id}")
+            save_data(data)
+        except ApiTelegramException as e:
+            if e.error_code != 403:
+                print(f"[FINE_NOTIFY_ERROR] {e}")
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "fine_close")
@@ -3846,7 +4004,6 @@ def show_season_archive(call):
 
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="stats_menu"))
-    text += "\n\nСоздание новых сезонов отключено."
     bot.edit_message_text(
         text,
         call.message.chat.id,
@@ -4504,6 +4661,22 @@ def level_up(user_id: str, data: dict):
         reward = 10 if (user["level"] % 5 == 0) else 5
         user["ender_eyes"] = user.get("ender_eyes", 0) + reward
         total_reward += reward
+
+        emoji_msg = None
+        if user["level"] % 10 == 0:
+            awarded = award_emoji(user_id, "1")
+            if awarded:
+                emoji_msg = f"🎉 Вы получили железную эмодзи №{awarded}!"
+        elif user["level"] % 5 == 0:
+            awarded = award_emoji(user_id, "0")
+            if awarded:
+                emoji_msg = f"🎉 Вы получили каменную эмодзи №{awarded}!"
+
+        if emoji_msg:
+            try:
+                bot.send_message(user_id, emoji_msg)
+            except Exception:
+                pass
 
     if total_reward > 0:
         save_data(data)
