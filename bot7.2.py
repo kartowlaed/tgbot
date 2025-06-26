@@ -17,7 +17,7 @@ import math
 from dotenv import load_dotenv
 
 load_dotenv()
-TOKEN = os.getenv("TELEGRAM_TOKEN")
+TOKEN = os.getenv("8170890381:AAEIX0qWiDnbCj_8794VZpIMEiS_feZQdAs"")
 if not TOKEN:
     raise RuntimeError("TELEGRAM_TOKEN is not set")
 
