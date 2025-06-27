@@ -1338,35 +1338,6 @@ def activate_bv_plus(call):
     )
 
 
-# ------------------- Логика выдачи эмодзи и кейсов -------------------
-def award_emoji(user_id, category_index):
-    data = load_data()
-    user = data["users"].get(user_id)
-
-    if not user:
-        return None, "Пользователь не найден."
-    if "emojis" not in user:
-        user["emojis"] = {}
-    cat_key = str(category_index)
-    if cat_key not in user["emojis"]:
-        user["emojis"][cat_key] = []
-    owned = user["emojis"][cat_key]
-    total = emoji_details[category_index]["quantity"]
-    if len(owned) >= total:
-        return None, f"Вы уже собрали все эмодзи в категории {emoji_details[category_index]['name']}."
-    available = [num for num in range(1, total + 1) if num not in owned]
-    awarded = random.choice(available)
-    user["emojis"][cat_key].append(awarded)
-    if "purchases" not in user:
-        user["purchases"] = []
-    user["purchases"].append({
-        "item": f"Получено из кейса: {emoji_details[category_index]['name']} №{awarded}",
-        "price": 0,
-        "date": datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-    })
-    save_data(data)
-    return awarded, None
-
 # ------------------- Просмотр информации об эмодзи -------------------
 def get_path(filename):
     return os.path.join(os.path.dirname(__file__), filename)
@@ -1391,10 +1362,6 @@ def show_emoji_info(chat_id, message_id, index):
 
 
 # ------------------- Просмотр информации о кейсе -------------------
-
-
-def get_path(filename):
-    return os.path.join(os.path.dirname(__file__), filename)
 
 def show_case_info(chat_id, message_id, index):
     case_item = case_details[index]
