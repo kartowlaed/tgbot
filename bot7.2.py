@@ -11,17 +11,21 @@ import uuid
 from telebot.apihelper import ApiTelegramException
 import logging
 from telebot.types import InputMediaPhoto
+
+
 from collections import OrderedDict
 from random import choice
 import math
 
-TOKEN = "8170890381:AAEIX0qWiDnbCj_8794VZpIMEiS_feZQdAs"
-ADMIN_ID = 827377121           # Для покупок, разбана и регистрации
-BOT_VERSION = "7.2"            # Текущая версия бота
 
-bot = telebot.TeleBot(TOKEN)
+TOKEN      = "8170890381:AAEIX0qWiDnbCj_8794VZpIMEiS_feZQdAs"
+ADMIN_ID   = 827377121           # Для покупок, разбана и регистрации
+BOT_VERSION = "7.2"
+DEFAULT_FINE_DAYS = 7            # срок оплаты штрафа по умолчанию
 
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 DEFAULT_FINE_DAYS = 7  # срок оплаты штрафа по умолчанию
+ADMIN_ID = 827377121           # Для покупок, разбана и регистрации
 
 
 GIFT_EMOJIS = ["🎁", "🎉", "🏆", "🎊"]
@@ -990,6 +994,29 @@ def admin_notifications_menu(call):
         parse_mode="HTML", reply_markup=markup
     )
 
+@bot.callback_query_handler(lambda c: c.data == "admin_announcement")
+def admin_announcement(call):
+    if call.from_user.id != ADMIN_ID:
+        return bot.answer_callback_query(call.id, "Нет доступа")
+    msg = bot.send_message(call.message.chat.id, "Введите текст объявления:")
+    bot.register_next_step_handler(msg, process_admin_announcement)
+
+def process_admin_announcement(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    text = message.text.strip()
+    data = load_data()
+    sent = 0
+    for uid in data.get("users", {}):
+        try:
+            bot.send_message(uid, text)
+            add_user_notification_record(data, uid, text)
+            sent += 1
+        except Exception:
+            pass
+    save_data(data)
+    bot.send_message(message.chat.id, f"✅ Отправлено {sent} объявлений.")
+
 @bot.callback_query_handler(lambda c: c.data == "admin_notification_bot")
 def admin_notification_bot(call):
     msg = bot.send_message(call.message.chat.id, "Введите текст «Обновления бота»:")
@@ -1069,6 +1096,69 @@ def admin_roles_menu(call):
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="open_admin_menu"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id,
                           parse_mode="HTML", reply_markup=markup)
+
+
+ROLES = {
+    "PRES001": "Президент",
+    "MAY002": "Мэр",
+    "CON003": "Министр Строительства",
+    "FIN004": "Министр Финансов",
+    "PROK005": "Прокурор",
+}
+
+@bot.callback_query_handler(lambda c: c.data == "admin_add_role")
+def admin_add_role_start(call):
+    if call.from_user.id != ADMIN_ID:
+        return bot.answer_callback_query(call.id, "Нет доступа")
+    msg = bot.send_message(call.message.chat.id, "Введите код роли и ник/username через пробел:")
+    bot.register_next_step_handler(msg, process_admin_add_role)
+
+
+    if message.from_user.id != ADMIN_ID:
+        return
+    try:
+        code, user_input = message.text.strip().split(None, 1)
+    except ValueError:
+        return bot.send_message(message.chat.id, "Неверный формат. Используйте CODE user")
+    role = ROLES.get(code.upper())
+    if not role:
+        return bot.send_message(message.chat.id, "Неизвестный код роли")
+    data = load_data()
+    uid = find_user_by_nick_or_username(user_input, data)
+    if not uid:
+        return bot.send_message(message.chat.id, "Пользователь не найден")
+    for u in data["users"].values():
+        if u.get("role") == role:
+            u.pop("role", None)
+    data["users"][uid]["role"] = role
+    save_data(data)
+    bot.send_message(message.chat.id, f"Роль '{role}' выдана пользователю {user_input}")
+
+@bot.callback_query_handler(lambda c: c.data == "admin_modify_role")
+def admin_modify_role(call):
+    admin_add_role_start(call)
+
+@bot.callback_query_handler(lambda c: c.data == "admin_del_role")
+def admin_del_role_start(call):
+    if call.from_user.id != ADMIN_ID:
+        return bot.answer_callback_query(call.id, "Нет доступа")
+    msg = bot.send_message(call.message.chat.id, "Введите код роли для удаления:")
+    bot.register_next_step_handler(msg, process_admin_del_role)
+
+def process_admin_del_role(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    code = message.text.strip().upper()
+    role = ROLES.get(code)
+    if not role:
+        return bot.send_message(message.chat.id, "Неизвестный код роли")
+    data = load_data()
+    for u in data["users"].values():
+        if u.get("role") == role:
+            u.pop("role", None)
+    save_data(data)
+    bot.send_message(message.chat.id, f"Роль '{role}' удалена")
+
 
 # ——— Баны ———
 @bot.callback_query_handler(lambda c: c.data == "admin_bans")
@@ -1336,7 +1426,6 @@ def activate_bv_plus(call):
     )
 
 
-
 # ------------------- Логика выдачи эмодзи и кейсов -------------------
 def award_emoji(user_id, category_index):
     data = load_data()
@@ -1368,7 +1457,8 @@ def award_emoji(user_id, category_index):
 
 
                   
-                  >>>> 7.2
+               
+      
 # ------------------- Просмотр информации об эмодзи -------------------
 def get_path(filename):
     return os.path.join(os.path.dirname(__file__), filename)
@@ -2195,6 +2285,11 @@ def handle_services(call):
 
 def process_player_search(message):
     query = message.text.strip().lstrip('@').lower()
+
+    if not query:
+        bot.send_message(message.chat.id, "❌ Игрок не найден.")
+        return
+
     data = load_data()
     found = False
 
@@ -2509,6 +2604,8 @@ def open_case_details(call):
     user_id = str(call.from_user.id)
     data = load_data()
 
+    user = data["users"].get(user_id, {})
+
     creator = get_user_display(case.get("creator_id"), data)
     text = (
         f"<b>Дело №{case['id']}</b>\n"
@@ -2526,7 +2623,7 @@ def open_case_details(call):
         markup.add(types.InlineKeyboardButton("Отклонить", callback_data=f"reject_{case_id}"))
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="law_cases"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
-
+    
     photos = case.get("screens") or []
     if photos:
         medias = [InputMediaPhoto(p) for p in photos[:10]]
@@ -2543,7 +2640,6 @@ def verdict_start(call):
     user_states[uid] = {"state": "set_verdict", "case_id": case_id}
 
     bot.send_message(call.message.chat.id, "Введите вердикт или сумму штрафа:")
-
 
 
 @bot.message_handler(func=lambda m: str(m.from_user.id) in user_states and user_states[str(m.from_user.id)].get("state") == "set_verdict")
@@ -2666,7 +2762,6 @@ def show_archived_case(call):
         f"Компенсация: {case['compensation']}\n"
 
         f"Вердикт: {case.get('verdict','—')}{fine_part}"
-
 
     )
     markup = types.InlineKeyboardMarkup().add(
@@ -3113,7 +3208,8 @@ def handle_tribes_page_safe(call):
     except Exception:
         page = 0
 
-    data   = load_dat
+    data   = load_data()
+
     tribes = list(data.get("tribes", {}).values())
     random.shuffle(tribes)
     per_page    = 5
@@ -3155,7 +3251,9 @@ def handle_tribes_page_safe(call):
     kb.add(types.InlineKeyboardButton("🔙 В меню трайбов", callback_data="community_tribes"))
 
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=kb)
-== Обработчик команды «трайбы» через текст сообщения
+
+# ===== Обработчик команды «трайбы» через текст сообщения
+
 @bot.message_handler(func=lambda m: m.text and m.text.lower() in ["трайбы", "/трайбы", "список трайбов", "все трайбы"])
 def handle_tribes_list(m):
     chat_id = m.chat.id
@@ -4247,7 +4345,10 @@ def process_tribe_login_rewards(user_id):
     if last_bonus_str:
         try:
             last_bonus_date = datetime.strptime(last_bonus_str, "%Y-%m-%d")
-            if (now - last_bonus_date).days >=      give_bonus = True
+
+            if (now - last_bonus_date).days >= 3:
+                give_bonus = True
+
         except Exception:
             give_bonus = True  # если дата битая — всё равно выдаём
     else:
@@ -4586,7 +4687,6 @@ GUIDE_STEPS = [
         )
     },
     {
-
         "title": "Готово! 🎉",
         "text": (
             "Ты просмотрел гид до конца.\n"
