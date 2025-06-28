@@ -14,9 +14,7 @@ from telebot.types import InputMediaPhoto
 from collections import OrderedDict
 from random import choice
 import math
-from dotenv import load_dotenv
 
-load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TOKEN:
     raise RuntimeError("TELEGRAM_TOKEN is not set")
