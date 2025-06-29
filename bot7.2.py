@@ -11,12 +11,9 @@ import uuid
 from telebot.apihelper import ApiTelegramException
 import logging
 from telebot.types import InputMediaPhoto
-
-
 from collections import OrderedDict
 from random import choice
 import math
-
 
 TOKEN      = "8170890381:AAEIX0qWiDnbCj_8794VZpIMEiS_feZQdAs"
 ADMIN_ID   = 827377121           # Для покупок, разбана и регистрации
@@ -1007,13 +1004,20 @@ def process_admin_announcement(message):
     text = message.text.strip()
     data = load_data()
     sent = 0
-    for uid in data.get("users", {}):
-        try:
-            bot.send_message(uid, text)
-            add_user_notification_record(data, uid, text)
-            sent += 1
-        except Exception:
-            pass
+
+    groups = [data.get("users", {}), data.get("banned_users", {}), data.get("minors", {})]
+    for group in groups:
+        for uid in group.keys():
+            try:
+                bot.send_message(int(uid), text)
+                add_user_notification_record(data, uid, text)
+                sent += 1
+            except ApiTelegramException as e:
+                if e.error_code != 403:
+                    print(f"[ANNOUNCE_ERROR] {e}")
+            except Exception as e:
+                print(f"[ANNOUNCE_ERROR] {e}")
+
     save_data(data)
     bot.send_message(message.chat.id, f"✅ Отправлено {sent} объявлений.")
 
@@ -1043,17 +1047,23 @@ def process_admin_notification(message, category_key):
     full_text = f"{message.text}\n\n{tag}"
     sent      = 0
 
-    # Шлём уведомление и начисляем +10 XP каждому подписчику выбранной категории
-    for uid, u in data.get("users", {}).items():
-        if u.get("notif_flags", 0) & FLAG_MAP.get(category_key, 0):
-            try:
-                bot.send_message(uid, full_text)
-                add_user_xp(uid, 10, data)
-                update_xp(uid)
-                add_user_notification_record(data, uid, full_text)
-                sent += 1
-            except Exception:
-                pass
+
+    groups = [data.get("users", {}), data.get("banned_users", {}), data.get("minors", {})]
+    for group in groups:
+        for uid, u in group.items():
+            if u.get("notif_flags", 0) & FLAG_MAP.get(category_key, 0):
+                try:
+                    bot.send_message(int(uid), full_text)
+                    add_user_xp(uid, 10, data)
+                    update_xp(uid)
+                    add_user_notification_record(data, uid, full_text)
+                    sent += 1
+                except ApiTelegramException as e:
+                    if e.error_code != 403:
+                        print(f"[NOTIF_ERROR] {e}")
+                except Exception as e:
+                    print(f"[NOTIF_ERROR] {e}")
+
 
     save_data(data)
 
@@ -1097,7 +1107,6 @@ def admin_roles_menu(call):
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id,
                           parse_mode="HTML", reply_markup=markup)
 
-
 ROLES = {
     "PRES001": "Президент",
     "MAY002": "Мэр",
@@ -1113,6 +1122,7 @@ def admin_add_role_start(call):
     msg = bot.send_message(call.message.chat.id, "Введите код роли и ник/username через пробел:")
     bot.register_next_step_handler(msg, process_admin_add_role)
 
+def process_admin_add_role(message):
 
     if message.from_user.id != ADMIN_ID:
         return
@@ -1425,7 +1435,6 @@ def activate_bv_plus(call):
         reply_markup=get_main_menu_markup(str(call.from_user.id))
     )
 
-
 # ------------------- Логика выдачи эмодзи и кейсов -------------------
 def award_emoji(user_id, category_index):
     data = load_data()
@@ -1457,8 +1466,7 @@ def award_emoji(user_id, category_index):
 
 
                   
-               
-      
+            
 # ------------------- Просмотр информации об эмодзи -------------------
 def get_path(filename):
     return os.path.join(os.path.dirname(__file__), filename)
@@ -2623,7 +2631,7 @@ def open_case_details(call):
         markup.add(types.InlineKeyboardButton("Отклонить", callback_data=f"reject_{case_id}"))
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="law_cases"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
-    
+
     photos = case.get("screens") or []
     if photos:
         medias = [InputMediaPhoto(p) for p in photos[:10]]
@@ -3252,7 +3260,6 @@ def handle_tribes_page_safe(call):
 
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=kb)
 
-# ===== Обработчик команды «трайбы» через текст сообщения
 
 @bot.message_handler(func=lambda m: m.text and m.text.lower() in ["трайбы", "/трайбы", "список трайбов", "все трайбы"])
 def handle_tribes_list(m):
